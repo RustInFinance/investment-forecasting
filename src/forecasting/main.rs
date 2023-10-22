@@ -105,7 +105,7 @@ fn main() {
 
     let axes = fg
         .axes2d()
-        .set_title("Investment forecasting", &[gnuplot::LabelOption::<&str>::Font("Arial", 15.0)])
+        .set_title(&format!("Investment forecasting (input capital: {base_capital} zl)"), &[gnuplot::LabelOption::<&str>::Font("Arial", 15.0)])
         .set_x_label(
             "time[days]",
             &[gnuplot::LabelOption::<&str>::Font("Arial", 12.0)],
