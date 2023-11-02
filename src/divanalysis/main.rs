@@ -5,6 +5,9 @@ use std::collections::HashMap;
 mod logging;
 use logging::ResultExt;
 
+//TODO: CLAP 
+
+
 //1) Stopa dywidendy (dywidenda / cena_akcji * 100%)
 // - 1.5 - 2 x wzgledem S&P 500 stopy dywidendy
 // - wyzsza niz inflacja (srednia inflacja historyczna 3.4% w USA)
@@ -15,7 +18,7 @@ use logging::ResultExt;
 //3) stopa wzrostu dywidendy (http://dripinvesting.org)
 //  - zaleca 10%
 
-fn analyze<R>(excel: &mut Xlsx<R>, category: &str) -> Result<(), &'static str>
+fn load_list<R>(excel: &mut Xlsx<R>, category: &str) -> Result<DataFrame, &'static str>
 where
     R: std::io::BufRead,
     R: std::io::Read,
@@ -138,13 +141,10 @@ where
             let s = Series::new(columns[*k], v);
             df_series.push(s);
         });
-        //        log::info!("Total DF_series {:?}", df_series);
         df = DataFrame::new(df_series).map_err(|_| "Error: Could not create DataFrame")?;
     }
-    // Pay-Date and Ex-Date are created , but why?
-    log::info!("DATA: {}", df);
 
-    Ok(())
+    Ok(df)
 }
 
 fn main() -> Result<(), &'static str> {
@@ -155,7 +155,10 @@ fn main() -> Result<(), &'static str> {
         open_workbook("data/U.S.DividendChampions-LIVE.xlsx").map_err(|_| "Error: opening XLSX")?;
 
     // Champions
-    analyze(&mut excel, "Champions")?;
+    let champions = load_list(&mut excel, "Champions")?;
+
+    // Pay-Date and Ex-Date are created , but why?
+    log::info!("Champions: {}", champions);
     // Contenders
 
     Ok(())
