@@ -5,8 +5,9 @@ use std::collections::HashMap;
 mod logging;
 use logging::ResultExt;
 
-//TODO: CLAP 
-
+//TODO: CLAP
+//TODO: Get ranking from remote or from file
+//TODO: 10% Div Y or more is subject to be suspecious
 
 //1) Stopa dywidendy (dywidenda / cena_akcji * 100%)
 // - 1.5 - 2 x wzgledem S&P 500 stopy dywidendy
@@ -17,6 +18,10 @@ use logging::ResultExt;
 //  - nie wiecej niz 75% (chyba ze spolki REIT, komandytowo-akcyjne)
 //3) stopa wzrostu dywidendy (http://dripinvesting.org)
 //  - zaleca 10%
+
+const SP500DIVY: f64 = 1.61; // 2023, make it from CLI
+const USINFLATION: f64 = 3.7; // 2023, make it from CLI
+const USAVGINFL: f64 = 3.4;
 
 fn load_list<R>(excel: &mut Xlsx<R>, category: &str) -> Result<DataFrame, &'static str>
 where
@@ -147,6 +152,33 @@ where
     Ok(df)
 }
 
+fn analyze_div_yield(
+    df: &DataFrame,
+    sp500_divy: f64,
+    inflation: f64,
+) -> Result<DataFrame, &'static str> {
+    // Dividend Yield should:
+    // 1. Be higher than inflation rate
+    // 2. be higher than 1.5*S&P500 Div Yield rate
+    // 3. More than 10% is suspecious (check their cash flow)
+    let min_ref_sp500 = sp500_divy * 1.5;
+    let minimal_accepted_divy = if min_ref_sp500 > inflation {
+        min_ref_sp500
+    } else {
+        inflation
+    };
+    let mask = df
+        .column("Div Yield")
+        .map_err(|_| "Div Yield column does not exist!")?
+        .gt(minimal_accepted_divy)
+        .map_err(|_| "Could not apply filtering data based on Div Yield and Inflation Div Yield")?;
+    let filtred_df = df.filter(&mask).expect("Error filtering");
+
+    filtred_df
+        .sort(["Div Yield"], true, false)
+        .map_err(|_| "Could not sort along 'Div Yield'")
+}
+
 fn main() -> Result<(), &'static str> {
     println!("Hello financial analysis world!");
     logging::init_logging_infrastructure();
@@ -159,7 +191,39 @@ fn main() -> Result<(), &'static str> {
 
     // Pay-Date and Ex-Date are created , but why?
     log::info!("Champions: {}", champions);
+
+    let champions_shortlisted_dy = analyze_div_yield(&champions, SP500DIVY, USINFLATION)?;
+    log::info!(
+        "Champions Shortlisted by DivY: {}",
+        champions_shortlisted_dy
+    );
+
     // Contenders
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_analyze_divy() -> Result<(), String> {
+        let inflation = 3.4;
+        let sp500_divy = 1.61;
+
+        let s1 = Series::new("Symbol", &["ABM", "INTC", "CAT"]);
+        let s2 = Series::new("Div Yield", &[5.54, 1.32, 4.0]);
+
+        let df: DataFrame = DataFrame::new(vec![s1, s2]).unwrap();
+
+        let s1 = Series::new("Symbol", &["ABM", "CAT"]);
+        let s2 = Series::new("Div Yield", &[5.54, 4.0]);
+
+        let ref_df: DataFrame = DataFrame::new(vec![s1, s2]).unwrap();
+
+        let result = analyze_div_yield(&df, sp500_divy, inflation).unwrap();
+        assert!(result.frame_equal(&ref_df));
+        Ok(())
+    }
 }
