@@ -22,6 +22,7 @@ use logging::ResultExt;
 const SP500DIVY: f64 = 1.61; // 2023, make it from CLI
 const USINFLATION: f64 = 3.7; // 2023, make it from CLI
 const USAVGINFL: f64 = 3.4;
+const DIV_PAYOUT_MAX_THRESHOLD: f64 = 0.75;
 
 fn load_list<R>(excel: &mut Xlsx<R>, category: &str) -> Result<DataFrame, &'static str>
 where
@@ -179,6 +180,35 @@ fn analyze_div_yield(
         .map_err(|_| "Could not sort along 'Div Yield'")
 }
 
+fn analyze_dividend_payout_rate(
+    df: &DataFrame,
+    max_threshold: f64,
+) -> Result<DataFrame, &'static str> {
+    // Dividend Payout rate
+    // 1. Is Current Div / Cash flow per share e.g. 0.22 / 1.7  = 0.129412
+    // 2. No more than 75%
+
+    let cols = df
+        .columns(&["Current Div", "CF/Share"])
+        .map_err(|_| "Current Div and/or CF/Share columns do not exist!")?;
+    let mask = (cols[0] / cols[1])
+        .lt(&Series::new("", &[max_threshold]))
+        .unwrap();
+    let filtred_df = df.filter(&mask).expect("Error filtering");
+
+    filtred_df
+        .sort(["Div Yield"], true, false)
+        .map_err(|_| "Could not sort along 'Div Yield'")
+}
+
+fn print_summary(df: &DataFrame) -> Result<(), &'static str> {
+    let selected_df = df
+        .select(&["Symbol", "Company", "Current Div", "Div Yield", "Price"])
+        .map_err(|_| "Unable to select mentioned columns!")?;
+    println!("{selected_df}");
+    Ok(())
+}
+
 fn main() -> Result<(), &'static str> {
     println!("Hello financial analysis world!");
     logging::init_logging_infrastructure();
@@ -197,6 +227,16 @@ fn main() -> Result<(), &'static str> {
         "Champions Shortlisted by DivY: {}",
         champions_shortlisted_dy
     );
+
+    let champions_shortlisted_dy_dp =
+        analyze_dividend_payout_rate(&champions_shortlisted_dy, DIV_PAYOUT_MAX_THRESHOLD)?;
+
+    log::info!(
+        "Champions Shortlisted by DivY and Div Pay-Out: {}",
+        champions_shortlisted_dy_dp
+    );
+
+    print_summary(&champions_shortlisted_dy_dp)?;
 
     // Contenders
 
@@ -223,6 +263,31 @@ mod tests {
         let ref_df: DataFrame = DataFrame::new(vec![s1, s2]).unwrap();
 
         let result = analyze_div_yield(&df, sp500_divy, inflation).unwrap();
+        assert!(result.frame_equal(&ref_df));
+        Ok(())
+    }
+
+    #[test]
+    fn test_analyze_divy_dpy() -> Result<(), String> {
+        let max_payout_rate = 0.75;
+
+        let s1 = Series::new("Symbol", &["ABM", "INTC", "CAT"]);
+        let s2 = Series::new("Div Yield", &[5.54, 1.32, 4.0]);
+        let s3 = Series::new("Current Div", &[0.54, 1.62, 0.14]);
+        let s4 = Series::new("CF/Share", &[10.0, 2.0, 20.0]);
+
+        let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4]).unwrap();
+
+        let s1 = Series::new("Symbol", &["ABM", "CAT"]);
+        let s2 = Series::new("Div Yield", &[5.54, 4.0]);
+        let s3 = Series::new("Current Div", &[0.54, 0.14]);
+        let s4 = Series::new("CF/Share", &[10.0, 20.0]);
+
+        let ref_df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4]).unwrap();
+        //print!("Ref DF: {ref_df}");
+
+        let result = analyze_dividend_payout_rate(&df, max_payout_rate).unwrap();
+        //print!("result DF: {result}");
         assert!(result.frame_equal(&ref_df));
         Ok(())
     }
