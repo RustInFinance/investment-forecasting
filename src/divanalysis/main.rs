@@ -24,8 +24,7 @@ const SP500DIVY: f64 = 1.61; // 2023, make it from CLI
 const USINFLATION: f64 = 3.7; // 2023, make it from CLI
 const USAVGINFL: f64 = 3.4;
 const DIV_PAYOUT_MAX_THRESHOLD: f64 = 0.75;
-const MIN_DIV_GROWTH : f64 = 10.0;
-
+const MIN_DIV_GROWTH: f64 = 10.0;
 
 fn load_list<R>(excel: &mut Xlsx<R>, category: &str) -> Result<DataFrame, &'static str>
 where
@@ -263,7 +262,8 @@ fn main() -> Result<(), &'static str> {
         champions_shortlisted_dy_dp
     );
 
-    let champions_shortlisted_dy_dp_dg = analyze_div_growth(&champions_shortlisted_dy_dp, MIN_DIV_GROWTH)?;
+    let champions_shortlisted_dy_dp_dg =
+        analyze_div_growth(&champions_shortlisted_dy_dp, MIN_DIV_GROWTH)?;
 
     print_summary(&champions_shortlisted_dy_dp_dg)?;
 
@@ -348,7 +348,7 @@ mod tests {
         //print!("Ref DF: {ref_df}");
 
         let result = analyze_div_growth(&df, min_growth_rate).unwrap();
-//        print!("result DF: {result}");
+        //        print!("result DF: {result}");
         assert!(result.frame_equal(&ref_df));
         Ok(())
     }
