@@ -1,0 +1,23 @@
+[package]
+name = "investments-forcasting"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "divanalysis"
+path = "src/divanalysis/main.rs"
+
+[[bin]]
+name = "forecasting"
+path = "src/forecasting/main.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+gnuplot = "0.0.37"
+chrono = "0.4"
+calamine = "0.22.1"
+log = "0.4.20"
+simple_logger = "4.2.0"
+clap = "4.4.6"
+polars = "0.34.2"

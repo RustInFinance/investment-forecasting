@@ -1,9 +1,5 @@
 use calamine::{open_workbook, Reader, Xlsx};
 use polars::prelude::*;
-use std::collections::HashMap;
-
-mod logging;
-use logging::ResultExt;
 
 //TODO: CLAP
 //TODO: Get ranking from remote or from file
@@ -26,134 +22,6 @@ const USAVGINFL: f64 = 3.4;
 const DIV_PAYOUT_MAX_THRESHOLD: f64 = 0.75;
 const MIN_DIV_GROWTH: f64 = 10.0;
 
-fn load_list<R>(excel: &mut Xlsx<R>, category: &str) -> Result<DataFrame, &'static str>
-where
-    R: std::io::BufRead,
-    R: std::io::Read,
-    R: std::io::Seek,
-{
-    log::info!("Processing category: {}", category);
-    let names = excel.sheet_names();
-    let name_sheet = names
-        .iter()
-        .find(|x| *x == category)
-        .ok_or("Error: Category not found")?;
-
-    // Dividend Yield
-    // Dividend
-    // Share price
-    // sector
-    let mut df = DataFrame::default();
-    if let Some(Ok(r)) = excel.worksheet_range(&name_sheet) {
-        let mut rows = r.rows();
-
-        // Rewind to actual categories
-        rows.next();
-        rows.next();
-
-        let categories = rows
-            .next()
-            .expect_and_log("Error: unable to get descriptive row");
-        //       let mut symbol = 0;
-
-        let mut columns: Vec<&str> = Vec::default();
-        let mut sseries: HashMap<usize, Vec<Option<&str>>> = HashMap::new();
-        let mut fseries: HashMap<usize, Vec<Option<f64>>> = HashMap::new();
-        for c in categories {
-            // Find indices of interesting collumns
-            if let Some(v) = c.get_string() {
-                columns.push(v);
-            } else if c.is_empty() {
-                columns.push("Blended"); // Blended info got empty name of column
-            }
-        }
-        log::info!("Columns: {:?}", columns);
-
-        // Iterate through rows of actual sold transactions
-        for row in rows {
-            //log::info!("{:?}",row);
-
-            for (i, cell) in row.iter().enumerate() {
-                match cell {
-                    calamine::DataType::Float(f) => {
-                        if fseries.contains_key(&i) {
-                            let vf = fseries
-                                .get_mut(&i)
-                                .ok_or("Error: accessing invalid category")?;
-                            vf.push(Some(*f));
-                        } else {
-                            fseries.insert(i, vec![Some(*f)]);
-                        }
-                    }
-                    calamine::DataType::String(s) => {
-                        if sseries.contains_key(&i) {
-                            let vf = sseries
-                                .get_mut(&i)
-                                .ok_or("Error: accessing invalid category")?;
-                            vf.push(Some(s));
-                        } else {
-                            if s != "" {
-                                sseries.insert(i, vec![Some(s)]);
-                            } else {
-                                // If empty field then it maybe a missing data
-                                log::warn!("Missing data at row: {:?}", row);
-                                if fseries.contains_key(&i) {
-                                    let vf = fseries
-                                        .get_mut(&i)
-                                        .ok_or("Error: accessing invalid category")?;
-                                    vf.push(None);
-                                } else {
-                                    log::error!("Error: incomplete data. Please update manualy");
-                                }
-                            }
-                        }
-                    }
-                    calamine::DataType::DateTime(s) => {
-                        if fseries.contains_key(&i) {
-                            let vf = fseries
-                                .get_mut(&i)
-                                .ok_or("Error: accessing invalid category")?;
-                            vf.push(Some(*s));
-                        } else {
-                            fseries.insert(i, vec![Some(*s)]);
-                        }
-                    }
-                    calamine::DataType::Empty => {
-                        // If empty field then it maybe a missing data
-                        log::warn!("Missing data at row: {:?}", row);
-                        if fseries.contains_key(&i) {
-                            let vf = fseries
-                                .get_mut(&i)
-                                .ok_or("Error: accessing invalid category")?;
-                            vf.push(None);
-                        } else if sseries.contains_key(&i) {
-                            let vf = sseries
-                                .get_mut(&i)
-                                .ok_or("Error: accessing invalid category")?;
-                            vf.push(None);
-                        } else {
-                        }
-                    }
-                    _ => (),
-                }
-            }
-        }
-
-        // Build DataFrame
-        let mut df_series: Vec<Series> = vec![];
-        fseries.iter().for_each(|(k, v)| {
-            let s = Series::new(columns[*k], v.iter());
-            df_series.push(s);
-        });
-        sseries.iter().for_each(|(k, v)| {
-            let s = Series::new(columns[*k], v);
-            df_series.push(s);
-        });
-        df = DataFrame::new(df_series).map_err(|_| "Error: Could not create DataFrame")?;
-    }
-
-    Ok(df)
-}
 
 fn analyze_div_yield(
     df: &DataFrame,
@@ -237,13 +105,13 @@ fn print_summary(df: &DataFrame) -> Result<(), &'static str> {
 
 fn main() -> Result<(), &'static str> {
     println!("Hello financial analysis world!");
-    logging::init_logging_infrastructure();
+    investments_forcasting::init_logging_infrastructure();
 
     let mut excel: Xlsx<_> =
         open_workbook("data/U.S.DividendChampions-LIVE.xlsx").map_err(|_| "Error: opening XLSX")?;
 
     // Champions
-    let champions = load_list(&mut excel, "Champions")?;
+    let champions = investments_forcasting::load_list(&mut excel, "Champions")?;
 
     // Pay-Date and Ex-Date are created , but why?
     log::info!("Champions: {}", champions);

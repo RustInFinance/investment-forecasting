@@ -2,8 +2,8 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use gnuplot::{AxesCommon, Caption, Color, Coordinate, Figure, Tick};
 
 enum Target {
-    manual((f64,)),
-    symbols(Vec<String>),
+    manual(&'static str,f64,f64,f64),
+    symbol(String),
 }
 
 fn compute_dividend_gain(
@@ -190,29 +190,14 @@ fn forecast_low_risk_instruments(base_capital: f64) {
 
 fn forecast_dividend_stocks(
     base_capital: f64,
-    companies: Option<Vec<String>>,
+    companies: Vec<Target>,
     investment_years: u32,
 ) {
     let time_data: Vec<u32> = (1u32..365 * investment_years + 1).collect();
 
     let tax_rate = 0.15;
     let num_capitalizations: u32 = 4;
-    let div_yield: f64 = 0.05;
-    let div_yield_growth_5y: f64 = 0.10;
-    let share_price: f64 = 100.0;
     let share_price_growth_rate: f64 = 0.034;
-
-    // Data of Revolut
-    let (capital, gains) = forecast_dividend_gains(
-        base_capital,
-        div_yield,
-        div_yield_growth_5y,
-        share_price,
-        share_price_growth_rate,
-        tax_rate,
-        &time_data,
-        num_capitalizations,
-    );
 
     // make actual plot
     let colors: Vec<&str> = vec!["blue", "green", "navy", "web-green"];
@@ -238,21 +223,37 @@ fn forecast_dividend_stocks(
     //            gnuplot::AutoOption::Fix(max_range as f64 * 3.0 as f64),
     //        );
 
-    //TODO: That part should be made at loop
-    let caption = match gains.last() {
-        // TODO: Params of manual
-        Some(x) => format!(
-            "MANUAL() (Capital in Stock[$]: {:.2}, Total Dividends Gains[$]: {:.2} )",
-            capital, x
-        ),
-        None => panic!("Error: No dividend data to plot!"),
-    };
-    axes.lines(&time_data, &gains, &[Caption(&caption), Color(colors[2])]);
-    //    axes.lines(
-    //        &time_data,
-    //        &obligacje_gains,
-    //        &[Caption(&obligacje_caption), Color(colors[3])],
-    //    );
+    companies.iter().enumerate().for_each(|(i, x)| {
+
+        match x {
+            Target::manual(name,dy,dyg,sp) => {
+
+                // Get Dividend prediction
+                let (capital, gains) = forecast_dividend_gains(
+                    base_capital,
+                    *dy,
+                    *dyg,
+                    *sp,
+                    share_price_growth_rate,
+                    tax_rate,
+                    &time_data,
+                    num_capitalizations,
+                );
+
+                let caption = match gains.last() {
+                    Some(x) => format!(
+                        "{name}(DIV Yield: {}, DYG 5G: {}, Price[$]: {}) (Capital in Stock[$]: {:.2}, Total Dividends Gains[$]: {:.2} )",*dy,*dyg,*sp, capital, x
+                    ),
+                    None => panic!("Error: No dividend data to plot!"),
+                };
+                axes.lines(&time_data, &gains, &[Caption(&caption), Color(colors[i])]);
+
+            },
+            Target::symbol(name) => {
+                // TODO: Load Data
+            },
+        }
+    }); 
     fg.show().expect("Error plotting");
 }
 
@@ -307,7 +308,11 @@ fn main() {
 
     forecast_low_risk_instruments(base_capital);
 
-    forecast_dividend_stocks(base_capital, None, 1);
+    let div_yield: f64 = 0.05;
+    let div_yield_growth_5y: f64 = 0.10;
+    let share_price: f64 = 100.0;
+
+    forecast_dividend_stocks(base_capital, vec![Target::manual("REFERENCE",div_yield,div_yield_growth_5y,share_price)], 1);
 }
 
 #[cfg(test)]
