@@ -3,6 +3,10 @@ use clap::Parser;
 use gnuplot::{AxesCommon, Caption, Color, Coordinate, Figure};
 use polars::prelude::*;
 
+//TODO: readme and picture
+//TODO: CI
+//TODO: analysis of old data to see if it works
+
 /// Program to predict gains from Dividend companies (Fetch XLSX list from: https://moneyzine.com/investments/dividend-champions/)
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -34,6 +38,10 @@ struct Args {
     /// Capital to be invested[$]
     #[arg(long, default_value_t = 10000.0)]
     capital: f64,
+
+    /// An Average shares price annual growth rate[%]
+    #[arg(long, default_value_t = 7.4)]
+    shares_price_growth_rate: f64,
 
     /// Length of investment [years]
     #[arg(long, default_value_t = 4)]
@@ -230,12 +238,13 @@ fn forecast_dividend_stocks(
     data: String,
     companies: Vec<Target>,
     investment_years: u32,
+    shares_price_growth_rate: f64,
 ) {
     let time_data: Vec<u32> = (1u32..365 * investment_years + 1).collect();
 
     let tax_rate = 0.15;
     let num_capitalizations: u32 = 4;
-    let share_price_growth_rate: f64 = 0.034;
+    let shares_price_growth_rate = shares_price_growth_rate / 100.0;
 
     // make actual plot
     let colors: Vec<&str> = vec!["blue", "green", "navy", "web-green", "#127cc1", "#76B900"];
@@ -246,7 +255,7 @@ fn forecast_dividend_stocks(
     let axes = fg
         .axes2d()
         .set_title(
-            &format!("Dividend {investment_years} years long investment forecasting (starting capital[$]: {base_capital:.2} ) "),
+            &format!("Dividend {investment_years} years long investment forecasting (starting capital[$]: {base_capital:.2}, share price growth rate[%]: {:.2} ) ",shares_price_growth_rate*100.0),
             &[gnuplot::LabelOption::<&str>::Font("Arial", 15.0)],
         )
         .set_x_label(
@@ -273,7 +282,7 @@ fn forecast_dividend_stocks(
                     *dy/100.0,
                     *dyg/100.0,
                     *sp,
-                    share_price_growth_rate,
+                    shares_price_growth_rate,
                     tax_rate,
                     &time_data,
                     num_capitalizations,
@@ -321,7 +330,7 @@ fn forecast_dividend_stocks(
                     dy,
                     dyg,
                     price,
-                    share_price_growth_rate,
+                    shares_price_growth_rate,
                     tax_rate,
                     &time_data,
                     num_capitalizations,
@@ -418,12 +427,24 @@ fn main() {
         ) {
             (Some(dy), Some(dg), Some(p)) => {
                 targets.push(Target::manual(&name, dy, dg, p));
-                forecast_dividend_stocks(args.capital, args.data, targets, args.years);
+                forecast_dividend_stocks(
+                    args.capital,
+                    args.data,
+                    targets,
+                    args.years,
+                    args.shares_price_growth_rate,
+                );
             }
             _ => panic!("\nError: Missing some custom arguments"),
         }
     } else {
-        forecast_dividend_stocks(args.capital, args.data, targets, args.years);
+        forecast_dividend_stocks(
+            args.capital,
+            args.data,
+            targets,
+            args.years,
+            args.shares_price_growth_rate,
+        );
     }
 }
 
