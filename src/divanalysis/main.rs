@@ -1,43 +1,38 @@
-use calamine::{open_workbook, Reader, Xlsx};
+use calamine::{open_workbook, Xlsx};
 use polars::prelude::*;
 
 //TODO: CLAP
 //TODO: Get ranking from remote or from file
-//TODO: Dividend yield more than 4.7%
-
-//1) Stopa dywidendy (dywidenda / cena_akcji * 100%)
-// - 1.5 - 2 x wzgledem S&P 500 stopy dywidendy
-// - wyzsza niz inflacja (srednia inflacja historyczna 3.4% w USA)
-// - 10% i wiecej to trzeba mocno sprawdzic stopa wyplaty dywidendy
-// - zaleca 4.7%
-//2) Stopa wyplat dywidendy (wyplycona dywidenda / zysk netto - licozny od przeplywow)
-//  - nie wiecej niz 75% (chyba ze spolki REIT, komandytowo-akcyjne)
-//3) stopa wzrostu dywidendy (http://dripinvesting.org)
-//  - zaleca 10%
 
 const SP500DIVY: f64 = 1.61; // 2023, make it from CLI
 const USINFLATION: f64 = 3.7; // 2023, make it from CLI
 const USAVGINFL: f64 = 3.4;
 const DIV_PAYOUT_MAX_THRESHOLD: f64 = 0.75;
 const MIN_DIV_GROWTH: f64 = 10.0;
+const MIN_DIV_YIELD: f64 = 4.7;
 const MAX_DIV_YIELD: f64 = 10.0;
 
 fn analyze_div_yield(
     df: &DataFrame,
     sp500_divy: f64,
     inflation: f64,
+    min_divy: f64,
     max_divy: f64,
 ) -> Result<DataFrame, &'static str> {
     // Dividend Yield should:
     // 1. Be higher than inflation rate
     // 2. be higher than 1.5*S&P500 Div Yield rate
-    // 3. More than 10% is suspecious (check their cash flow)
+    // 3. No More than 10% (over 10% is suspecious, check their cash flow)
     let min_ref_sp500 = sp500_divy * 1.5;
-    let minimal_accepted_divy = if min_ref_sp500 > inflation {
+    let mut minimal_accepted_divy = if min_ref_sp500 > inflation {
         min_ref_sp500
     } else {
         inflation
     };
+    if min_divy > minimal_accepted_divy {
+        minimal_accepted_divy = min_divy;
+    };
+
     let divy_col = df
         .column("Div Yield")
         .map_err(|_| "Div Yield column does not exist!")?;
@@ -123,8 +118,13 @@ fn main() -> Result<(), &'static str> {
     // Pay-Date and Ex-Date are created , but why?
     log::info!("Champions: {}", champions);
 
-    let champions_shortlisted_dy =
-        analyze_div_yield(&champions, SP500DIVY, USINFLATION, MAX_DIV_YIELD)?;
+    let champions_shortlisted_dy = analyze_div_yield(
+        &champions,
+        SP500DIVY,
+        USINFLATION,
+        MIN_DIV_YIELD,
+        MAX_DIV_YIELD,
+    )?;
     log::info!(
         "Champions Shortlisted by DivY: {}",
         champions_shortlisted_dy
@@ -157,6 +157,7 @@ mod tests {
         let inflation = 3.4;
         let sp500_divy = 1.61;
         let max_divy = 10.0;
+        let min_divy = 3.9;
 
         let s1 = Series::new("Symbol", &["ABM", "INTC", "CAT"]);
         let s2 = Series::new("Div Yield", &[5.54, 1.32, 4.0]);
@@ -168,7 +169,29 @@ mod tests {
 
         let ref_df: DataFrame = DataFrame::new(vec![s1, s2]).unwrap();
 
-        let result = analyze_div_yield(&df, sp500_divy, inflation, max_divy).unwrap();
+        let result = analyze_div_yield(&df, sp500_divy, inflation, min_divy, max_divy).unwrap();
+        assert!(result.frame_equal(&ref_df));
+        Ok(())
+    }
+
+    #[test]
+    fn test_analyze_divy_min() -> Result<(), String> {
+        let inflation = 3.4;
+        let sp500_divy = 1.61;
+        let max_divy = 10.0;
+        let min_divy = 5.0;
+
+        let s1 = Series::new("Symbol", &["ABM", "INTC", "CAT"]);
+        let s2 = Series::new("Div Yield", &[9.0, 1.32, 4.0]);
+
+        let df: DataFrame = DataFrame::new(vec![s1, s2]).unwrap();
+
+        let s1 = Series::new("Symbol", &["ABM"]);
+        let s2 = Series::new("Div Yield", &[9.0]);
+
+        let ref_df: DataFrame = DataFrame::new(vec![s1, s2]).unwrap();
+
+        let result = analyze_div_yield(&df, sp500_divy, inflation, min_divy, max_divy).unwrap();
         assert!(result.frame_equal(&ref_df));
         Ok(())
     }
@@ -178,6 +201,7 @@ mod tests {
         let inflation = 3.4;
         let sp500_divy = 1.61;
         let max_divy = 10.0;
+        let min_divy = 3.0;
 
         let s1 = Series::new("Symbol", &["ABM", "INTC", "CAT"]);
         let s2 = Series::new("Div Yield", &[11.0, 1.32, 4.0]);
@@ -189,7 +213,7 @@ mod tests {
 
         let ref_df: DataFrame = DataFrame::new(vec![s1, s2]).unwrap();
 
-        let result = analyze_div_yield(&df, sp500_divy, inflation, max_divy).unwrap();
+        let result = analyze_div_yield(&df, sp500_divy, inflation, min_divy, max_divy).unwrap();
         assert!(result.frame_equal(&ref_df));
         Ok(())
     }
