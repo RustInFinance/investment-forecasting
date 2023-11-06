@@ -1,9 +1,11 @@
+use calamine::{open_workbook, Reader, Xlsx};
 use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use gnuplot::{AxesCommon, Caption, Color, Coordinate, Figure, Tick};
+use polars::prelude::*;
 
 enum Target {
-    manual(&'static str,f64,f64,f64),
-    symbol(String),
+    manual(&'static str, f64, f64, f64),
+    symbol(&'static str),
 }
 
 fn compute_dividend_gain(
@@ -145,7 +147,7 @@ fn forecast_low_risk_instruments(base_capital: f64) {
     );
 
     // make actual plot
-    let colors: Vec<&str> = vec!["blue", "green", "navy", "web-green"];
+    let colors: Vec<&str> = vec!["blue", "green", "navy", "web-green", "#127cc1", "#76B900"];
     let mut fg = Figure::new();
     fg.set_terminal("pngcairo size 1280,960", "investment-gains.png");
 
@@ -188,11 +190,7 @@ fn forecast_low_risk_instruments(base_capital: f64) {
     fg.show().expect("Error plotting");
 }
 
-fn forecast_dividend_stocks(
-    base_capital: f64,
-    companies: Vec<Target>,
-    investment_years: u32,
-) {
+fn forecast_dividend_stocks(base_capital: f64, companies: Vec<Target>, investment_years: u32) {
     let time_data: Vec<u32> = (1u32..365 * investment_years + 1).collect();
 
     let tax_rate = 0.15;
@@ -200,14 +198,14 @@ fn forecast_dividend_stocks(
     let share_price_growth_rate: f64 = 0.034;
 
     // make actual plot
-    let colors: Vec<&str> = vec!["blue", "green", "navy", "web-green"];
+    let colors: Vec<&str> = vec!["blue", "green", "navy", "web-green", "#127cc1", "#76B900"];
     let mut fg = Figure::new();
     fg.set_terminal("pngcairo size 1280,960", "dividend-investment-gains.png");
 
     let axes = fg
         .axes2d()
         .set_title(
-            &format!("Dividend Investment Forecasting (starting capital[$]: {base_capital:.2} )"),
+            &format!("Dividend {investment_years} years long investment forecasting (starting capital[$]: {base_capital:.2} ) "),
             &[gnuplot::LabelOption::<&str>::Font("Arial", 15.0)],
         )
         .set_x_label(
@@ -222,6 +220,10 @@ fn forecast_dividend_stocks(
     //            gnuplot::AutoOption::Fix(0.0),
     //            gnuplot::AutoOption::Fix(max_range as f64 * 3.0 as f64),
     //        );
+
+    let mut excel: Xlsx<_> = open_workbook("data/U.S.DividendChampions-LIVE.xlsx")
+        .map_err(|_| "Error: opening XLSX")
+        .expect("Could not open Dividends data file");
 
     companies.iter().enumerate().for_each(|(i, x)| {
 
@@ -242,7 +244,7 @@ fn forecast_dividend_stocks(
 
                 let caption = match gains.last() {
                     Some(x) => format!(
-                        "{name}(DIV Yield: {}, DYG 5G: {}, Price[$]: {}) (Capital in Stock[$]: {:.2}, Total Dividends Gains[$]: {:.2} )",*dy,*dyg,*sp, capital, x
+                        "{name}(DIV Yield[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2}) (Capital in Stock[$]: {:.2}, Total Dividends Gains[$]: {:.2} )",*dy*100.0,*dyg*100.0,*sp, capital, x
                     ),
                     None => panic!("Error: No dividend data to plot!"),
                 };
@@ -250,10 +252,49 @@ fn forecast_dividend_stocks(
 
             },
             Target::symbol(name) => {
-                // TODO: Load Data
+                let all = investments_forcasting::load_list(&mut excel, "All").expect("Unable to load Data");
+                let name_str : &str = &name;
+                let company = Series::new("", vec![name_str]);
+                let mask = all.column("Symbol").unwrap().equal(&company).unwrap();
+                let company_data = all.filter(&mask).expect("Unable to filter loaded data");
+
+                let price_series = company_data.column("Price").unwrap();
+                let price = price_series.get(0).expect("Unable to get Price of selected company");
+
+                let dy_series = company_data.column("Div Yield").unwrap();
+                let dy = dy_series.get(0).expect("Unable to get Div Yield of selected company");
+
+                let dyg_series = company_data.column("DGR 5Y").unwrap();
+                let dyg = dyg_series.get(0).expect("Unable to get DGR 5Y of selected company");
+
+                // Dividend list has percentages of values so we need to convert them from e.g. 1%
+                // to 0.01 etc.
+                let (price,dy,dyg) = match (price,dy,dyg) {
+                    (AnyValue::Float64(valp),AnyValue::Float64(vald),AnyValue::Float64(valg)) => (valp,vald/100.0,valg/100.0),
+                    _ => panic!("Unable to get price value"),
+                };
+
+                // Get Dividend prediction
+                let (capital, gains) = forecast_dividend_gains(
+                    base_capital,
+                    dy,
+                    dyg,
+                    price,
+                    share_price_growth_rate,
+                    tax_rate,
+                    &time_data,
+                    num_capitalizations,
+                );
+                let caption = match gains.last() {
+                    Some(x) => format!(
+                        "{name}(DIV Yield[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2}) (Capital in Stock[$]: {:.2}, Total Dividends Gains[$]: {:.2} )",dy*100.0,dyg*100.0,price, capital, x
+                    ),
+                    None => panic!("Error: No dividend data to plot!"),
+                };
+                axes.lines(&time_data, &gains, &[Caption(&caption), Color(colors[i])]);
             },
         }
-    }); 
+    });
     fg.show().expect("Error plotting");
 }
 
@@ -312,7 +353,17 @@ fn main() {
     let div_yield_growth_5y: f64 = 0.10;
     let share_price: f64 = 100.0;
 
-    forecast_dividend_stocks(base_capital, vec![Target::manual("REFERENCE",div_yield,div_yield_growth_5y,share_price)], 1);
+    forecast_dividend_stocks(
+        base_capital,
+        vec![
+            Target::manual("REFERENCE", div_yield, div_yield_growth_5y, share_price),
+            Target::symbol("ABM"),
+            Target::symbol("CFR"),
+            Target::symbol("CTBI"),
+            Target::manual("INTC", 0.0133, 0.0555, 38.0),
+        ],
+        10,
+    );
 }
 
 #[cfg(test)]
