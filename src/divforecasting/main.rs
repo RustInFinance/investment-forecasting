@@ -198,6 +198,7 @@ fn forecast_dividend_stocks(base_capital: f64, companies: Vec<Target>, investmen
     // make actual plot
     let colors: Vec<&str> = vec!["blue", "green", "navy", "web-green", "#127cc1", "#76B900"];
     let mut fg = Figure::new();
+    let mut max_y = 0.0;
     fg.set_terminal("pngcairo size 1280,960", "dividend-investment-gains.png");
 
     let axes = fg
@@ -214,10 +215,6 @@ fn forecast_dividend_stocks(base_capital: f64, companies: Vec<Target>, investmen
             "Total Dividends",
             &[gnuplot::LabelOption::<&str>::Font("Arial", 12.0)],
         );
-    //        .set_y_range(
-    //            gnuplot::AutoOption::Fix(0.0),
-    //            gnuplot::AutoOption::Fix(max_range as f64 * 3.0 as f64),
-    //        );
 
     let mut excel: Xlsx<_> = open_workbook("data/U.S.DividendChampions-LIVE.xlsx")
         .map_err(|_| "Error: opening XLSX")
@@ -229,7 +226,7 @@ fn forecast_dividend_stocks(base_capital: f64, companies: Vec<Target>, investmen
             Target::manual(name,dy,dyg,sp) => {
 
                 // Get Dividend prediction
-                let (capital, gains) = forecast_dividend_gains(
+                let (capital, final_payout, gains) = forecast_dividend_gains(
                     base_capital,
                     *dy,
                     *dyg,
@@ -241,9 +238,13 @@ fn forecast_dividend_stocks(base_capital: f64, companies: Vec<Target>, investmen
                 );
 
                 let caption = match gains.last() {
-                    Some(x) => format!(
-                        "{name}(DIV Yield[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2}) (Capital in Stock[$]: {:.2}, Total Dividends Gains[$]: {:.2} )",*dy*100.0,*dyg*100.0,*sp, capital, x
-                    ),
+                    Some(x) => {
+                        if *x > max_y {
+                            max_y = *x;
+                        }
+                        format!(
+                        "{name}(DIV Yield[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2}) (Capital in Stock[$]: {:.2}, Payout[$]: {:.2}, Total Dividends Gains[$]: {:.2} )",*dy*100.0,*dyg*100.0,*sp, capital, final_payout,x
+                    )},
                     None => panic!("Error: No dividend data to plot!"),
                 };
                 axes.lines(&time_data, &gains, &[Caption(&caption), Color(colors[i])]);
@@ -273,7 +274,7 @@ fn forecast_dividend_stocks(base_capital: f64, companies: Vec<Target>, investmen
                 };
 
                 // Get Dividend prediction
-                let (capital, gains) = forecast_dividend_gains(
+                let (capital, final_payout, gains) = forecast_dividend_gains(
                     base_capital,
                     dy,
                     dyg,
@@ -284,9 +285,13 @@ fn forecast_dividend_stocks(base_capital: f64, companies: Vec<Target>, investmen
                     num_capitalizations,
                 );
                 let caption = match gains.last() {
-                    Some(x) => format!(
-                        "{name}(DIV Yield[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2}) (Capital in Stock[$]: {:.2}, Total Dividends Gains[$]: {:.2} )",dy*100.0,dyg*100.0,price, capital, x
-                    ),
+                    Some(x) => {
+                        if *x > max_y {
+                            max_y = *x;
+                        }
+                        format!(
+                        "{name}(DIV Yield[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2}) (Capital in Stock[$]: {:.2}, Payout[$]: {:.2}, Total Dividends Gains[$]: {:.2} )",dy*100.0,dyg*100.0,price, capital, final_payout,x
+                    )},
                     None => panic!("Error: No dividend data to plot!"),
                 };
                 axes.lines(&time_data, &gains, &[Caption(&caption), Color(colors[i])]);
@@ -294,17 +299,19 @@ fn forecast_dividend_stocks(base_capital: f64, companies: Vec<Target>, investmen
         }
     });
 
-    let info =
-        format!("Notes:\n   * 15% of Tax is applied to every dividend pay-out\n");
+    // Extend Y range to fit plot titles
+    axes.set_y_range(
+        gnuplot::AutoOption::Fix(0.0),
+        gnuplot::AutoOption::Fix(max_y * 1.2 as f64),
+    );
+
+    let info = format!("Notes:\n   * 15% of Tax is applied to every dividend pay-out\n");
     axes.label(
         &info,
         Coordinate::Graph(0.02),
         Coordinate::Graph(0.75),
         &[gnuplot::LabelOption::<&str>::Font("Arial", 15.0)],
     );
-
-
-
 
     fg.show().expect("Error plotting");
 }
@@ -318,12 +325,13 @@ fn forecast_dividend_gains(
     tax_rate: f64,
     time_line: &Vec<u32>,
     num_capitalizations: u32,
-) -> (f64, Vec<f64>) {
+) -> (f64, f64, Vec<f64>) {
     let mut gains: Vec<f64> = vec![];
 
     let mut curr_gain: f64 = 0.0;
     let mut share_price = share_price;
     let mut curr_div = div_yield * share_price;
+    let mut last_gain = 0.0;
 
     let capitalization_period = 365 / num_capitalizations;
 
@@ -333,6 +341,7 @@ fn forecast_dividend_gains(
             let g: f64;
             g = compute_dividend_gain(num_shares, curr_div, num_capitalizations, tax_rate);
             curr_gain += g;
+            last_gain = g;
         }
         if x % 365 == 0 {
             // Share price and div yeild update
@@ -344,7 +353,7 @@ fn forecast_dividend_gains(
         gains.push(curr_gain);
     });
 
-    (num_shares * share_price, gains)
+    (num_shares * share_price, last_gain, gains)
 }
 
 fn main() {
@@ -361,12 +370,11 @@ fn main() {
     forecast_dividend_stocks(
         base_capital,
         vec![
-            Target::manual("REFERENCE", div_yield, div_yield_growth_5y, share_price),
+            Target::manual("EXAMPLE", 0.04, 0.1, 10.0),
             Target::symbol("ABM"),
             Target::symbol("CFR"),
             Target::symbol("CTBI"),
             Target::manual("INTC", 0.0133, 0.0555, 38.0),
-            Target::manual("EXAMPLE", 0.04, 0.1, 10.0),
         ],
         4,
     );
@@ -431,8 +439,11 @@ mod tests {
         // total dividend payout : 1000.0*(0.5)*(1.0-0.15)
         let ref_total_payout: f64 = 425.0;
 
+        // final payout : 1000.0*(0.5)/1.0*(1.0-0.15)
+        let ref_final_payout: f64 = 425.0;
+
         // Compute dividend gains and value of stock
-        let (final_capital, gains) = forecast_dividend_gains(
+        let (final_capital, final_payout, gains) = forecast_dividend_gains(
             base_capital,
             div_yield,
             div_yield_growth_5y,
@@ -444,6 +455,7 @@ mod tests {
         );
 
         assert_eq!(ref_final_capital, ((final_capital * 100.0).round() / 100.0));
+        assert_eq!(ref_final_payout, ((final_payout * 100.0).round() / 100.0));
         match gains.last() {
             Some(total_payout) => {
                 assert_eq!(*total_payout, ref_total_payout);
@@ -468,17 +480,19 @@ mod tests {
         // final capital : (1000.0 * (1.0 + 0.1/4.0) )*(1.025)*(1.025)*(1.025) = 1103.812891
         let ref_final_capital = 1100.00;
 
+        // final payout : 1000.0*(0.5)/4.0*(1.0-0.15)
+
         // total dividend payout :
         // 1000.0*0.5/4.0*(1.0-0.15) = 106.25 <- c1
         // (1000.0*(0.5/4.0)*(1.0-0.15)= 106.25 <- c2
         // 1000.0*0.5/4.0*(1.0-0.15) = 106.25 <- c3
-        // (1000.0*(0.5/4.0)*(1.0-0.15)= 106.25 <- c4
+        // (1000.0*(0.5/4.0)*(1.0-0.15)= 106.25 <- c4 (final payout)
         // c1 + c2 + c3 + c4 = 106.25*4.0 = 425.0
-
+        let ref_final_payout: f64 = 106.25;
         let ref_total_payout: f64 = 425.0;
 
         // Compute dividend gains and value of stock
-        let (final_capital, gains) = forecast_dividend_gains(
+        let (final_capital, final_payout, gains) = forecast_dividend_gains(
             base_capital,
             div_yield,
             div_yield_growth_5y,
@@ -489,6 +503,7 @@ mod tests {
             num_capitalizations,
         );
 
+        assert_eq!(ref_final_payout, ((final_payout * 100.0).round() / 100.0));
         assert_eq!(ref_final_capital, ((final_capital * 100.0).round() / 100.0));
         match gains.last() {
             Some(total_payout) => {
@@ -523,12 +538,13 @@ mod tests {
         // ((1000.0*0.5)*(1.0+0.1))/4.0*(1.0-0.15) = 116.875 <- c5
         // ((1000.0*0.5)*(1.0+0.1))/4.0*(1.0-0.15) = 116.875 <- c6
         // ((1000.0*0.5)*(1.0+0.1))/4.0*(1.0-0.15) = 116.875 <- c7
-        // ((1000.0*0.5)*(1.0+0.1))/4.0*(1.0-0.15) = 116.875 <- c8
+        // ((1000.0*0.5)*(1.0+0.1))/4.0*(1.0-0.15) = 116.875 <- c8 (final payout)
         // c1 + c2 + c3 + c4 + c5 +c6 +c7 +c8 = 106.25*4.0 + 116.875*4.0 = 892.5
         let ref_total_payout: f64 = 892.5;
+        let ref_final_payout: f64 = 116.88;
 
         // Compute dividend gains and value of stock
-        let (final_capital, gains) = forecast_dividend_gains(
+        let (final_capital, final_payout, gains) = forecast_dividend_gains(
             base_capital,
             div_yield,
             div_yield_growth_5y,
@@ -539,6 +555,7 @@ mod tests {
             num_capitalizations,
         );
 
+        assert_eq!(ref_final_payout, ((final_payout * 100.0).round() / 100.0));
         assert_eq!(ref_final_capital, ((final_capital * 100.0).round() / 100.0));
         match gains.last() {
             Some(total_payout) => {

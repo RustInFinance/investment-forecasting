@@ -22,7 +22,6 @@ const USAVGINFL: f64 = 3.4;
 const DIV_PAYOUT_MAX_THRESHOLD: f64 = 0.75;
 const MIN_DIV_GROWTH: f64 = 10.0;
 
-
 fn analyze_div_yield(
     df: &DataFrame,
     sp500_divy: f64,
