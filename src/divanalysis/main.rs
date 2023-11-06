@@ -1,16 +1,41 @@
 use calamine::{open_workbook, Xlsx};
+use clap::Parser;
 use polars::prelude::*;
 
-//TODO: CLAP
 //TODO: Get ranking from remote or from file
 
-const SP500DIVY: f64 = 1.61; // 2023, make it from CLI
-const USINFLATION: f64 = 3.7; // 2023, make it from CLI
-const USAVGINFL: f64 = 3.4;
-const DIV_PAYOUT_MAX_THRESHOLD: f64 = 0.75;
-const MIN_DIV_GROWTH: f64 = 10.0;
-const MIN_DIV_YIELD: f64 = 4.7;
-const MAX_DIV_YIELD: f64 = 10.0;
+/// Simple program to greet a person
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Name of the list with companies increasing dividends. Possible values: "Champions", "Contenders", "Challengers", "All"
+    #[arg(long, default_value = "Champions")]
+    list: String,
+
+    /// Average USA inflation during investment time[%]
+    #[arg(long, default_value_t = 3.4)]
+    inflation: f64,
+
+    /// Minimum accepted Dividend Yield[%]
+    #[arg(long, default_value_t = 4.7)]
+    min_div_yield: f64,
+
+    /// Maximum accepted Dividend Yield[%]
+    #[arg(long, default_value_t = 10.0)]
+    max_div_yield: f64,
+
+    /// Minimum accepted Dividend Growth rate[%]
+    #[arg(long, default_value_t = 10.0)]
+    min_div_growth_rate: f64,
+
+    /// Maximum accepted Dividend Payout rate[%]
+    #[arg(long, default_value_t = 75.0)]
+    max_div_payout_rate: f64,
+
+    /// Standard and Poor 500 list's average DIV Yield[%]
+    #[arg(long, default_value_t = 1.61)]
+    sp500_divy: f64,
+}
 
 fn analyze_div_yield(
     df: &DataFrame,
@@ -109,41 +134,35 @@ fn main() -> Result<(), &'static str> {
     println!("Hello financial analysis world!");
     investments_forecasting::init_logging_infrastructure();
 
+    let args = Args::parse();
+
     let mut excel: Xlsx<_> =
         open_workbook("data/U.S.DividendChampions-LIVE.xlsx").map_err(|_| "Error: opening XLSX")?;
 
     // Champions
-    let champions = investments_forecasting::load_list(&mut excel, "Champions")?;
+    let data = investments_forecasting::load_list(&mut excel, &args.list)?;
 
-    // Pay-Date and Ex-Date are created , but why?
-    log::info!("Champions: {}", champions);
-
-    let champions_shortlisted_dy = analyze_div_yield(
-        &champions,
-        SP500DIVY,
-        USINFLATION,
-        MIN_DIV_YIELD,
-        MAX_DIV_YIELD,
+    let data_shortlisted_dy = analyze_div_yield(
+        &data,
+        args.sp500_divy,
+        args.inflation,
+        args.min_div_yield,
+        args.max_div_yield,
     )?;
-    log::info!(
-        "Champions Shortlisted by DivY: {}",
-        champions_shortlisted_dy
-    );
+    log::info!("Champions Shortlisted by DivY: {}", data_shortlisted_dy);
 
-    let champions_shortlisted_dy_dp =
-        analyze_dividend_payout_rate(&champions_shortlisted_dy, DIV_PAYOUT_MAX_THRESHOLD)?;
+    let data_shortlisted_dy_dp =
+        analyze_dividend_payout_rate(&data_shortlisted_dy, args.max_div_payout_rate / 100.0)?;
 
     log::info!(
         "Champions Shortlisted by DivY and Div Pay-Out: {}",
-        champions_shortlisted_dy_dp
+        data_shortlisted_dy_dp
     );
 
-    let champions_shortlisted_dy_dp_dg =
-        analyze_div_growth(&champions_shortlisted_dy_dp, MIN_DIV_GROWTH)?;
+    let data_shortlisted_dy_dp_dg =
+        analyze_div_growth(&data_shortlisted_dy_dp, args.min_div_growth_rate)?;
 
-    print_summary(&champions_shortlisted_dy_dp_dg)?;
-
-    // Contenders
+    print_summary(&data_shortlisted_dy_dp_dg)?;
 
     Ok(())
 }
