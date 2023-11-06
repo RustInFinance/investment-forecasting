@@ -133,7 +133,6 @@ fn print_summary(df: &DataFrame) -> Result<(), &'static str> {
 }
 
 fn main() -> Result<(), &'static str> {
-    println!("Hello financial analysis world!");
     investments_forecasting::init_logging_infrastructure();
 
     let args = Args::parse();

@@ -1,11 +1,48 @@
-use calamine::{open_workbook, Reader, Xlsx};
-use chrono::{Datelike, NaiveDate, NaiveDateTime};
-use gnuplot::{AxesCommon, Caption, Color, Coordinate, Figure, Tick};
+use calamine::{open_workbook, Xlsx};
+use clap::Parser;
+use gnuplot::{AxesCommon, Caption, Color, Coordinate, Figure};
 use polars::prelude::*;
 
-enum Target {
-    manual(&'static str, f64, f64, f64),
-    symbol(&'static str),
+/// Program to predict gains from Dividend companies (Fetch XLSX list from: https://moneyzine.com/investments/dividend-champions/)
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Data in XLSX format (Fetch from https://moneyzine.com/investments/dividend-champions/)
+    #[arg(long)]
+    data: String,
+
+    /// Symbol names of companies from dividend list as provided with "data" argument
+    #[arg(long, requires = "data", default_values_t = &["ABM".to_string()] )]
+    company: Vec<String>,
+
+    /// Custom (not taken from the list) company name
+    #[arg(long, required = false, requires_all = &["custom_price","custom_div_yield","custom_div_growth"])]
+    custom_name: Option<String>,
+
+    /// Custom company share price[$]
+    #[arg(long, required = false)]
+    custom_price: Option<f64>,
+
+    /// Custom company dividend yield[%]
+    #[arg(long)]
+    custom_div_yield: Option<f64>,
+
+    /// Custom company dividend growth[%]
+    #[arg(long)]
+    custom_div_growth: Option<f64>,
+
+    /// Capital to be invested[$]
+    #[arg(long, default_value_t = 10000.0)]
+    capital: f64,
+
+    /// Length of investment [years]
+    #[arg(long, default_value_t = 4)]
+    years: u32,
+}
+
+enum Target<'a> {
+    manual(&'a str, f64, f64, f64),
+    symbol(&'a str),
 }
 
 fn compute_dividend_gain(
@@ -40,7 +77,7 @@ fn generate_revolut_gains(
     let mut curr_capital = capital;
     let mut curr_gain: f64 = 0.0;
 
-    time_line.iter().for_each(|x| {
+    time_line.iter().for_each(|_| {
         let g: f64;
         (curr_capital, g) = compute_gain(curr_capital, investment_rate, 365, 0.0);
         curr_gain += g;
@@ -188,7 +225,12 @@ fn forecast_low_risk_instruments(base_capital: f64) {
     fg.show().expect("Error plotting");
 }
 
-fn forecast_dividend_stocks(base_capital: f64, companies: Vec<Target>, investment_years: u32) {
+fn forecast_dividend_stocks(
+    base_capital: f64,
+    data: String,
+    companies: Vec<Target>,
+    investment_years: u32,
+) {
     let time_data: Vec<u32> = (1u32..365 * investment_years + 1).collect();
 
     let tax_rate = 0.15;
@@ -216,7 +258,7 @@ fn forecast_dividend_stocks(base_capital: f64, companies: Vec<Target>, investmen
             &[gnuplot::LabelOption::<&str>::Font("Arial", 12.0)],
         );
 
-    let mut excel: Xlsx<_> = open_workbook("data/U.S.DividendChampions-LIVE.xlsx")
+    let mut excel: Xlsx<_> = open_workbook(data)
         .map_err(|_| "Error: opening XLSX")
         .expect("Could not open Dividends data file");
 
@@ -228,8 +270,8 @@ fn forecast_dividend_stocks(base_capital: f64, companies: Vec<Target>, investmen
                 // Get Dividend prediction
                 let (capital, final_payout, gains) = forecast_dividend_gains(
                     base_capital,
-                    *dy,
-                    *dyg,
+                    *dy/100.0,
+                    *dyg/100.0,
                     *sp,
                     share_price_growth_rate,
                     tax_rate,
@@ -243,7 +285,7 @@ fn forecast_dividend_stocks(base_capital: f64, companies: Vec<Target>, investmen
                             max_y = *x;
                         }
                         format!(
-                        "{name}(DIV Yield[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2}) (Capital in Stock[$]: {:.2}, Payout[$]: {:.2}, Total Dividends Gains[$]: {:.2} )",*dy*100.0,*dyg*100.0,*sp, capital, final_payout,x
+                        "{name}(DIV Yield[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2}) (Capital in Stock[$]: {:.2}, Payout[$]: {:.2}, Total Dividends Gains[$]: {:.2} )",*dy,*dyg,*sp, capital, final_payout,x
                     )},
                     None => panic!("Error: No dividend data to plot!"),
                 };
@@ -359,25 +401,30 @@ fn forecast_dividend_gains(
 fn main() {
     println!("Hello, investment forecasting world!");
 
-    let base_capital: f64 = 10000.0;
+    let args = Args::parse();
 
-    forecast_low_risk_instruments(base_capital);
+    forecast_low_risk_instruments(args.capital);
 
-    let div_yield: f64 = 0.05;
-    let div_yield_growth_5y: f64 = 0.10;
-    let share_price: f64 = 100.0;
+    let mut targets: Vec<Target> = vec![];
+    args.company
+        .iter()
+        .for_each(|symbol| targets.push(Target::symbol(&symbol)));
 
-    forecast_dividend_stocks(
-        base_capital,
-        vec![
-            Target::manual("EXAMPLE", 0.04, 0.1, 10.0),
-            Target::symbol("ABM"),
-            Target::symbol("CFR"),
-            Target::symbol("CTBI"),
-            Target::manual("INTC", 0.0133, 0.0555, 38.0),
-        ],
-        4,
-    );
+    if let Some(name) = args.custom_name {
+        match (
+            args.custom_div_yield,
+            args.custom_div_growth,
+            args.custom_price,
+        ) {
+            (Some(dy), Some(dg), Some(p)) => {
+                targets.push(Target::manual(&name, dy, dg, p));
+                forecast_dividend_stocks(args.capital, args.data, targets, args.years);
+            }
+            _ => panic!("\nError: Missing some custom arguments"),
+        }
+    } else {
+        forecast_dividend_stocks(args.capital, args.data, targets, args.years);
+    }
 }
 
 #[cfg(test)]
