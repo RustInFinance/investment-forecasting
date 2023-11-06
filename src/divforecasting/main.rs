@@ -10,13 +10,11 @@ enum Target {
 
 fn compute_dividend_gain(
     num_shares: f64,
-    div_yield_rate: f64,
-    share_price: f64,
+    curr_div: f64,
     num_capitalizations: u32,
     transaction_tax: f64,
 ) -> f64 {
-    let gains: f64 = num_shares * div_yield_rate * share_price / (num_capitalizations as f64)
-        * (1.0 - transaction_tax);
+    let gains: f64 = num_shares * curr_div / (num_capitalizations as f64) * (1.0 - transaction_tax);
     gains
 }
 
@@ -252,7 +250,7 @@ fn forecast_dividend_stocks(base_capital: f64, companies: Vec<Target>, investmen
 
             },
             Target::symbol(name) => {
-                let all = investments_forcasting::load_list(&mut excel, "All").expect("Unable to load Data");
+                let all = investments_forecasting::load_list(&mut excel, "All").expect("Unable to load Data");
                 let name_str : &str = &name;
                 let company = Series::new("", vec![name_str]);
                 let mask = all.column("Symbol").unwrap().equal(&company).unwrap();
@@ -312,7 +310,7 @@ fn forecast_dividend_gains(
 
     let mut curr_gain: f64 = 0.0;
     let mut share_price = share_price;
-    let mut div_yield = div_yield;
+    let mut curr_div = div_yield * share_price;
 
     let capitalization_period = 365 / num_capitalizations;
 
@@ -320,13 +318,7 @@ fn forecast_dividend_gains(
     time_line.iter().for_each(|x| {
         if x % capitalization_period == 0 {
             let g: f64;
-            g = compute_dividend_gain(
-                num_shares,
-                div_yield,
-                share_price,
-                num_capitalizations,
-                tax_rate,
-            );
+            g = compute_dividend_gain(num_shares, curr_div, num_capitalizations, tax_rate);
             curr_gain += g;
         }
         if x % 365 == 0 {
@@ -334,7 +326,7 @@ fn forecast_dividend_gains(
             // Compute new share price
             share_price = share_price * (1.0 + share_price_growth_rate);
             // Compute new Div Yield
-            div_yield = div_yield * (1.0 + div_yield_growth_5y);
+            curr_div = curr_div * (1.0 + div_yield_growth_5y);
         }
         gains.push(curr_gain);
     });
@@ -397,16 +389,11 @@ mod tests {
         // num_shares*share_price*div_yield_rate / (num_capitalizations as f64) * (1.0 - transaction_tax);
         //1000.0*0.1/(4.0)*0.9 = 25.0*0.9 = 22.5;
         let ref_gain = 22.5;
+        let curr_div = share_price * div_yield_rate;
 
         assert_eq!(
             ref_gain,
-            compute_dividend_gain(
-                num_shares,
-                div_yield_rate,
-                share_price,
-                num_capitalizations,
-                transaction_tax
-            )
+            compute_dividend_gain(num_shares, curr_div, num_capitalizations, transaction_tax)
         );
 
         Ok(())
@@ -519,12 +506,12 @@ mod tests {
         // (1000.0*(0.5/4.0)*(1.0-0.15)= 106.25 <- c2
         // 1000.0*0.5/4.0*(1.0-0.15) = 106.25 <- c3
         // (1000.0*(0.5/4.0)*(1.0-0.15)= 106.25 <- c4
-        // (1000.0*(1.0+0.1))*(0.5*(1.0+0.1))/4.0*(1.0-0.15) = 128.5625 <- c5
-        // (1000.0*(1.0+0.1))*(0.5*(1.0+0.1))/4.0*(1.0-0.15) = 128.5625 <- c6
-        // (1000.0*(1.0+0.1))*(0.5*(1.0+0.1))/4.0*(1.0-0.15) = 128.5625 <- c7
-        // (1000.0*(1.0+0.1))*(0.5*(1.0+0.1))/4.0*(1.0-0.15) = 128.5625 <- c8
-        // c1 + c2 + c3 + c4 + c5 +c6 +c7 +c8 = 106.25*4.0 + 128.5625*4.0 = 939.25
-        let ref_total_payout: f64 = 939.25;
+        // ((1000.0*0.5)*(1.0+0.1))/4.0*(1.0-0.15) = 116.875 <- c5
+        // ((1000.0*0.5)*(1.0+0.1))/4.0*(1.0-0.15) = 116.875 <- c6
+        // ((1000.0*0.5)*(1.0+0.1))/4.0*(1.0-0.15) = 116.875 <- c7
+        // ((1000.0*0.5)*(1.0+0.1))/4.0*(1.0-0.15) = 116.875 <- c8
+        // c1 + c2 + c3 + c4 + c5 +c6 +c7 +c8 = 106.25*4.0 + 116.875*4.0 = 892.5
+        let ref_total_payout: f64 = 892.5;
 
         // Compute dividend gains and value of stock
         let (final_capital, gains) = forecast_dividend_gains(

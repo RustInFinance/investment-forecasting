@@ -105,13 +105,13 @@ fn print_summary(df: &DataFrame) -> Result<(), &'static str> {
 
 fn main() -> Result<(), &'static str> {
     println!("Hello financial analysis world!");
-    investments_forcasting::init_logging_infrastructure();
+    investments_forecasting::init_logging_infrastructure();
 
     let mut excel: Xlsx<_> =
         open_workbook("data/U.S.DividendChampions-LIVE.xlsx").map_err(|_| "Error: opening XLSX")?;
 
     // Champions
-    let champions = investments_forcasting::load_list(&mut excel, "Champions")?;
+    let champions = investments_forecasting::load_list(&mut excel, "Champions")?;
 
     // Pay-Date and Ex-Date are created , but why?
     log::info!("Champions: {}", champions);

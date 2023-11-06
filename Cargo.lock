@@ -565,7 +565,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "investments-forcasting"
+name = "investments-forecasting"
 version = "0.1.0"
 dependencies = [
  "calamine",

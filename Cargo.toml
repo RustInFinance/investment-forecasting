@@ -1,5 +1,5 @@
 [package]
-name = "investments-forcasting"
+name = "investments-forecasting"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,8 +8,8 @@ name = "divanalysis"
 path = "src/divanalysis/main.rs"
 
 [[bin]]
-name = "forecasting"
-path = "src/forecasting/main.rs"
+name = "divforecasting"
+path = "src/divforecasting/main.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
