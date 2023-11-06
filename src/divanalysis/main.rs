@@ -6,9 +6,8 @@ use polars::prelude::*;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-
     /// Data in XLSX format (Fetch from https://moneyzine.com/investments/dividend-champions/)
-    #[arg(long, required=true)]
+    #[arg(long, required = true)]
     data: String,
 
     /// Name of the list with companies increasing dividends. Possible values: "Champions", "Contenders", "Challengers", "All"
@@ -139,8 +138,7 @@ fn main() -> Result<(), &'static str> {
 
     let args = Args::parse();
 
-    let mut excel: Xlsx<_> =
-        open_workbook(args.data).map_err(|_| "Error: opening XLSX")?;
+    let mut excel: Xlsx<_> = open_workbook(args.data).map_err(|_| "Error: opening XLSX")?;
 
     // Champions
     let data = investments_forecasting::load_list(&mut excel, &args.list)?;
