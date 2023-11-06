@@ -293,6 +293,19 @@ fn forecast_dividend_stocks(base_capital: f64, companies: Vec<Target>, investmen
             },
         }
     });
+
+    let info =
+        format!("Notes:\n   * 15% of Tax is applied to every dividend pay-out\n");
+    axes.label(
+        &info,
+        Coordinate::Graph(0.02),
+        Coordinate::Graph(0.75),
+        &[gnuplot::LabelOption::<&str>::Font("Arial", 15.0)],
+    );
+
+
+
+
     fg.show().expect("Error plotting");
 }
 
@@ -353,8 +366,9 @@ fn main() {
             Target::symbol("CFR"),
             Target::symbol("CTBI"),
             Target::manual("INTC", 0.0133, 0.0555, 38.0),
+            Target::manual("EXAMPLE", 0.04, 0.1, 10.0),
         ],
-        10,
+        4,
     );
 }
 
