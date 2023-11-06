@@ -46,6 +46,9 @@ struct Args {
     /// Length of investment [years]
     #[arg(long, default_value_t = 4)]
     years: u32,
+
+    #[arg(long, default_value_t = 15.0)]
+    tax_rate: f64,
 }
 
 enum Target<'a> {
@@ -239,10 +242,11 @@ fn forecast_dividend_stocks(
     companies: Vec<Target>,
     investment_years: u32,
     shares_price_growth_rate: f64,
+    tax_rate: f64,
 ) {
     let time_data: Vec<u32> = (1u32..365 * investment_years + 1).collect();
 
-    let tax_rate = 0.15;
+    let tax_rate = tax_rate / 100.0;
     let num_capitalizations: u32 = 4;
     let shares_price_growth_rate = shares_price_growth_rate / 100.0;
 
@@ -356,7 +360,10 @@ fn forecast_dividend_stocks(
         gnuplot::AutoOption::Fix(max_y * 1.2 as f64),
     );
 
-    let info = format!("Notes:\n   * 15% of Tax is applied to every dividend pay-out\n");
+    let info = format!(
+        "Notes:\n   * {}% of Tax is applied to every dividend pay-out\n",
+        tax_rate * 100.0
+    );
     axes.label(
         &info,
         Coordinate::Graph(0.02),
@@ -433,6 +440,7 @@ fn main() {
                     targets,
                     args.years,
                     args.shares_price_growth_rate,
+                    args.tax_rate,
                 );
             }
             _ => panic!("\nError: Missing some custom arguments"),
@@ -444,6 +452,7 @@ fn main() {
             targets,
             args.years,
             args.shares_price_growth_rate,
+            args.tax_rate,
         );
     }
 }
