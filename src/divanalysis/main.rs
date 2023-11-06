@@ -2,12 +2,15 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
-//TODO: Get ranking from remote or from file
-
-/// Simple program to greet a person
+/// Program to help to analyze Dividend companies (Fetch XLSX list from: https://moneyzine.com/investments/dividend-champions/)
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+
+    /// Data in XLSX format (Fetch from https://moneyzine.com/investments/dividend-champions/)
+    #[arg(long, required=true)]
+    data: String,
+
     /// Name of the list with companies increasing dividends. Possible values: "Champions", "Contenders", "Challengers", "All"
     #[arg(long, default_value = "Champions")]
     list: String,
@@ -137,7 +140,7 @@ fn main() -> Result<(), &'static str> {
     let args = Args::parse();
 
     let mut excel: Xlsx<_> =
-        open_workbook("data/U.S.DividendChampions-LIVE.xlsx").map_err(|_| "Error: opening XLSX")?;
+        open_workbook(args.data).map_err(|_| "Error: opening XLSX")?;
 
     // Champions
     let data = investments_forecasting::load_list(&mut excel, &args.list)?;
