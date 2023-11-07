@@ -3,20 +3,16 @@ use clap::Parser;
 use gnuplot::{AxesCommon, Caption, Color, Coordinate, Figure};
 use polars::prelude::*;
 
-//TODO: readme and picture
-//TODO: CI
-//TODO: analysis of old data to see if it works
-
 /// Program to predict gains from Dividend companies (Fetch XLSX list from: https://moneyzine.com/investments/dividend-champions/)
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Data in XLSX format (Fetch from https://moneyzine.com/investments/dividend-champions/)
     #[arg(long)]
-    data: String,
+    data: Option<String>,
 
     /// Symbol names of companies from dividend list as provided with "data" argument
-    #[arg(long, requires = "data", default_values_t = &["ABM".to_string()] )]
+    #[arg(long, requires = "data", default_values_t = &[] )]
     company: Vec<String>,
 
     /// Custom (not taken from the list) company name
@@ -41,7 +37,7 @@ struct Args {
 
     /// An Average shares price annual growth rate[%]
     #[arg(long, default_value_t = 7.4)]
-    shares_price_growth_rate: f64,
+    share_price_growth_rate: f64,
 
     /// Length of investment [years]
     #[arg(long, default_value_t = 4)]
@@ -238,7 +234,7 @@ fn forecast_low_risk_instruments(base_capital: f64) {
 
 fn forecast_dividend_stocks(
     base_capital: f64,
-    data: String,
+    data: Option<String>,
     companies: Vec<Target>,
     investment_years: u32,
     shares_price_growth_rate: f64,
@@ -271,9 +267,15 @@ fn forecast_dividend_stocks(
             &[gnuplot::LabelOption::<&str>::Font("Arial", 12.0)],
         );
 
-    let mut excel: Xlsx<_> = open_workbook(data)
-        .map_err(|_| "Error: opening XLSX")
-        .expect("Could not open Dividends data file");
+    let all = match data {
+        Some(database) => {
+            let mut excel: Xlsx<_> = open_workbook(database)
+                .map_err(|_| "Error: opening XLSX")
+                .expect("Could not open Dividends data file");
+            investments_forecasting::load_list(&mut excel, "All").expect("Unable to load Data")
+        }
+        None => DataFrame::default(),
+    };
 
     companies.iter().enumerate().for_each(|(i, x)| {
 
@@ -306,7 +308,6 @@ fn forecast_dividend_stocks(
 
             },
             Target::symbol(name) => {
-                let all = investments_forecasting::load_list(&mut excel, "All").expect("Unable to load Data");
                 let name_str : &str = &name;
                 let company = Series::new("", vec![name_str]);
                 let mask = all.column("Symbol").unwrap().equal(&company).unwrap();
@@ -389,17 +390,23 @@ fn forecast_dividend_gains(
     let mut curr_gain: f64 = 0.0;
     let mut share_price = share_price;
     let mut curr_div = div_yield * share_price;
+
     let mut last_gain = 0.0;
 
     let capitalization_period = 365 / num_capitalizations;
 
     let num_shares = base_capital / share_price;
+    log::info!("Company: Price[$]: {share_price},  Num Shares: {num_shares} , ANNUAL DIV PER SHARE[$]: {curr_div}");
+
     time_line.iter().for_each(|x| {
         if x % capitalization_period == 0 {
             let g: f64;
             g = compute_dividend_gain(num_shares, curr_div, num_capitalizations, tax_rate);
             curr_gain += g;
             last_gain = g;
+            log::info!(
+                "Company: Price[$]: {share_price},  Num Shares: {num_shares} ,PAYED DIV[$]: {g}"
+            );
         }
         if x % 365 == 0 {
             // Share price and div yeild update
@@ -417,6 +424,7 @@ fn forecast_dividend_gains(
 fn main() {
     println!("Hello, investment forecasting world!");
 
+    investments_forecasting::init_logging_infrastructure();
     let args = Args::parse();
 
     forecast_low_risk_instruments(args.capital);
@@ -439,7 +447,7 @@ fn main() {
                     args.data,
                     targets,
                     args.years,
-                    args.shares_price_growth_rate,
+                    args.share_price_growth_rate,
                     args.tax_rate,
                 );
             }
@@ -451,7 +459,7 @@ fn main() {
             args.data,
             targets,
             args.years,
-            args.shares_price_growth_rate,
+            args.share_price_growth_rate,
             args.tax_rate,
         );
     }
@@ -561,7 +569,7 @@ mod tests {
 
         // total dividend payout :
         // 1000.0*0.5/4.0*(1.0-0.15) = 106.25 <- c1
-        // (1000.0*(0.5/4.0)*(1.0-0.15)= 106.25 <- c2
+        // 1000.0*(0.5/4.0)*(1.0-0.15)= 106.25 <- c2
         // 1000.0*0.5/4.0*(1.0-0.15) = 106.25 <- c3
         // (1000.0*(0.5/4.0)*(1.0-0.15)= 106.25 <- c4 (final payout)
         // c1 + c2 + c3 + c4 = 106.25*4.0 = 425.0
