@@ -1,6 +1,10 @@
 # investment-forecasting
-Tools to help in investin in divdend companies based on data from [Dividend Champions list](https://moneyzine.com/investments/dividend-champions/) and 10-11-12 method of investing as described in this [book](https://getrichwithdividends.com/)
-
+Tools to help in investing in dividend companies based on data from [Dividend Champions list](https://moneyzine.com/investments/dividend-champions/) and 10-11-12 method of investing as described in this [book](https://getrichwithdividends.com/)
+### How to use it?
+1. Download [Dividend Champions list](https://moneyzine.com/investments/dividend-champions/)
+2. Use divanalysis tool to find companies worth investing for
+3. Use divforecasting tool to predict gains of chosen companies for your expected investment time. You can also manually type "custom" company parameters as it maybe useful for reference
+      
 ### Examples:
 ##### Find a company from Dividend champions that is worth investing for based on 10-11-12 system:
 cargo run --bin divanalysis -- --data data/U.S.DividendChampions-LIVE.xlsx 
