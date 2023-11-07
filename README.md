@@ -25,4 +25,5 @@ cargo run --bin divforecasting -- --custom-name Apple --custom-price 218.86 --cu
 ##### Predict Dividend gains for Apple company (parameters defined manually) and ABM and CTBI for 5 years investment period:
 cargo run --bin divforecasting -- --custom-name Apple --custom-price 218.86 --custom-div-yield 1.33 --custom-div-growth 7.27  --tax-rate 0.0 --share-price-growth-rate=-19.4 --years 5 --capital 1000.0 --company ABM --company CTBI --data data/U.S.DividendChampions-LIVE.xlsx 
 ###### Output:
+![image](https://github.com/jczaja/investment-forecasting/assets/15085062/0f9327b2-a3b5-4838-b538-6b7b93bc37bc)
 
