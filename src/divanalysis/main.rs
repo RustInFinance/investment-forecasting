@@ -93,7 +93,7 @@ fn analyze_dividend_payout_rate(
     let mask = (cols[0] / cols[1])
         .lt(&Series::new("", &[max_threshold]))
         .unwrap();
-    let filtred_df = df.filter(&mask).expect("Error filtering");
+    let mut filtred_df = df.filter(&mask).expect("Error filtering");
 
     filtred_df
         .sort(["Div Yield"], true, false)
@@ -125,9 +125,18 @@ fn analyze_div_growth(df: &DataFrame, min_growth_rate: f64) -> Result<DataFrame,
 }
 
 fn print_summary(df: &DataFrame) -> Result<(), &'static str> {
-    let selected_df = df
+    let mut selected_df = df
         .select(&["Symbol", "Company", "Current Div", "Div Yield", "Price"])
         .map_err(|_| "Unable to select mentioned columns!")?;
+    let mut rate = selected_df
+        .column("Current Div")
+        .expect("No \"Current Div\" column")
+        / df.column("CF/Share").expect("No \"CF/Share\" column")
+        * 100.0;
+    let rate = rate.rename("Div Payout Rate[%]");
+    selected_df
+        .with_column(rate.clone())
+        .expect("Unable to add Rate column");
     println!("{selected_df}");
     Ok(())
 }
