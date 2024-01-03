@@ -2,6 +2,10 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
+// TODO: Make possiblity to analyze selected company and show which elements are not matching
+// selection
+
+
 /// Program to help to analyze Dividend companies (Fetch XLSX list from: https://moneyzine.com/investments/dividend-champions/)
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -13,6 +17,10 @@ struct Args {
     /// Name of the list with companies increasing dividends. Possible values: "Champions", "Contenders", "Challengers", "All"
     #[arg(long, default_value = "Champions")]
     list: String,
+
+    /// Symbol names of companies from dividend list as provided with "data" argument
+    #[arg(long, requires = "data", default_values_t = &[] )]
+    company: Vec<String>,
 
     /// Average USA inflation during investment time[%]
     #[arg(long, default_value_t = 3.4)]
@@ -93,7 +101,7 @@ fn analyze_dividend_payout_rate(
     let mask = (cols[0] / cols[1])
         .lt(&Series::new("", &[max_threshold]))
         .unwrap();
-    let mut filtred_df = df.filter(&mask).expect("Error filtering");
+    let filtred_df = df.filter(&mask).expect("Error filtering");
 
     filtred_df
         .sort(["Div Yield"], true, false)
@@ -124,14 +132,28 @@ fn analyze_div_growth(df: &DataFrame, min_growth_rate: f64) -> Result<DataFrame,
         .map_err(|_| "Could not sort along 'DGR 1Y'")
 }
 
-fn print_summary(df: &DataFrame) -> Result<(), &'static str> {
-    let mut selected_df = df
-        .select(&["Symbol", "Company", "Current Div", "Div Yield", "Price"])
-        .map_err(|_| "Unable to select mentioned columns!")?;
-    let mut rate = selected_df
-        .column("Current Div")
+fn print_summary(df: &DataFrame, company : Option<&str>) -> Result<(), &'static str> {
+
+    let dfs = match company {
+        Some(company) => {
+           let mask = df.column("Symbol").map_err(|_| "Error: Unable to get Symbol")?
+        .equal(company).map_err(|_| "Error: Unable to create mask")?;
+        df.filter(&mask).map_err(|_| "Error: Unable to get Symbol")?
+        }
+        ,
+        None => df.clone(),
+    };
+    if dfs.height() == 0 {
+        return Err("Company symbol not present in selected List");
+    }
+
+    let mut selected_df = dfs.select(&["Symbol", "Company", "Current Div", "Div Yield", "Price"]) .map_err(|_| "Unable to select mentioned columns!")?;
+    log::info!("Selected companies: {selected_df}");
+
+    let mut rate = dfs
+        .column("Annualized")
         .expect("No \"Current Div\" column")
-        / df.column("CF/Share").expect("No \"CF/Share\" column")
+        / dfs.column("CF/Share").expect("No \"CF/Share\" column")
         * 100.0;
     let rate = rate.rename("Div Payout Rate[%]");
     selected_df
@@ -151,28 +173,37 @@ fn main() -> Result<(), &'static str> {
     // Champions
     let data = investments_forecasting::load_list(&mut excel, &args.list)?;
 
-    let data_shortlisted_dy = analyze_div_yield(
-        &data,
-        args.sp500_divy,
-        args.inflation,
-        args.min_div_yield,
-        args.max_div_yield,
-    )?;
-    log::info!("Champions Shortlisted by DivY: {}", data_shortlisted_dy);
 
-    let data_shortlisted_dy_dp =
-        analyze_dividend_payout_rate(&data_shortlisted_dy, args.max_div_payout_rate / 100.0)?;
+    // For no handpicked compnies just make overall analysis
+    if args.company.len() == 0 {
 
-    log::info!(
-        "Champions Shortlisted by DivY and Div Pay-Out: {}",
-        data_shortlisted_dy_dp
-    );
+        let data_shortlisted_dy = analyze_div_yield(
+            &data,
+            args.sp500_divy,
+            args.inflation,
+            args.min_div_yield,
+            args.max_div_yield,
+        )?;
+        log::info!("Champions Shortlisted by DivY: {}", data_shortlisted_dy);
 
-    let data_shortlisted_dy_dp_dg =
-        analyze_div_growth(&data_shortlisted_dy_dp, args.min_div_growth_rate)?;
+        let data_shortlisted_dy_dp =
+            analyze_dividend_payout_rate(&data_shortlisted_dy, args.max_div_payout_rate / 100.0)?;
 
-    print_summary(&data_shortlisted_dy_dp_dg)?;
+        log::info!(
+            "Champions Shortlisted by DivY and Div Pay-Out: {}",
+            data_shortlisted_dy_dp
+        );
 
+        let data_shortlisted_dy_dp_dg =
+            analyze_div_growth(&data_shortlisted_dy_dp, args.min_div_growth_rate)?;
+
+        print_summary(&data_shortlisted_dy_dp_dg,None)?;
+
+    } else {
+        args.company
+            .iter()
+            .try_for_each(|symbol| print_summary(&data,Some(&symbol)))?;
+    }
     Ok(())
 }
 

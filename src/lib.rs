@@ -1,4 +1,4 @@
-use calamine::{open_workbook, Reader, Xlsx};
+use calamine::{Reader, Xlsx};
 use polars::prelude::*;
 use std::fmt;
 
@@ -12,6 +12,7 @@ where
 {
     log::info!("Processing category: {}", category);
     let names = excel.sheet_names();
+    log::info!("Available categories: {:?}", names);
     let name_sheet = names
         .iter()
         .find(|x| *x == category)
