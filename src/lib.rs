@@ -50,7 +50,6 @@ where
 
         // Iterate through rows of actual sold transactions
         for row in rows {
-            //log::info!("{:?}",row);
 
             for (i, cell) in row.iter().enumerate() {
                 match cell {
@@ -111,6 +110,7 @@ where
                                 .ok_or("Error: accessing invalid category")?;
                             vf.push(None);
                         } else {
+                            sseries.insert(i, vec![None]);
                         }
                     }
                     _ => (),
@@ -128,7 +128,7 @@ where
             let s = Series::new(columns[*k], v);
             df_series.push(s);
         });
-        df = DataFrame::new(df_series).map_err(|_| "Error: Could not create DataFrame")?;
+        df = DataFrame::new(df_series).map_err(|msg| { log::error!("DF error: {msg}") ;"Error: Could not create DataFrame"})?;
     }
 
     Ok(df)
