@@ -2,24 +2,28 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
-// TODO: Make possiblity to analyze selected company and show which elements are not matching
+// TODO: Make possiblity to analyze selected company based on polygon.io API
+// TODO: AMCR, TFC i PXD, HSBC
+// TODO: Make UK list supported
 // selection
 
+// TODO: Change to Result fully in get_polygon_data.   
 
 /// Program to help to analyze Dividend companies (Fetch XLSX list from: https://moneyzine.com/investments/dividend-champions/)
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Data in XLSX format (Fetch from https://moneyzine.com/investments/dividend-champions/)
-    #[arg(long, required = true)]
-    data: String,
+    #[arg(long)]
+    data: Option<String>,
 
     /// Name of the list with companies increasing dividends. Possible values: "Champions", "Contenders", "Challengers", "All"
     #[arg(long, default_value = "Champions")]
     list: String,
 
-    /// Symbol names of companies from dividend list as provided with "data" argument
-    #[arg(long, requires = "data", default_values_t = &[] )]
+    /// Symbol names of companies from dividend list if "data" is provided and from Polygon.io API
+    /// when no "data" is given
+    #[arg(long, default_values_t = &[] )]
     company: Vec<String>,
 
     /// Average USA inflation during investment time[%]
@@ -132,6 +136,11 @@ fn analyze_div_growth(df: &DataFrame, min_growth_rate: f64) -> Result<DataFrame,
         .map_err(|_| "Could not sort along 'DGR 1Y'")
 }
 
+fn print_polygon_data_summary(df: &DataFrame, company : Option<&str>) -> Result<(), &'static str> {
+    println!("{df}");
+    Ok(())
+}
+
 fn print_summary(df: &DataFrame, company : Option<&str>) -> Result<(), &'static str> {
 
     let dfs = match company {
@@ -168,17 +177,21 @@ fn main() -> Result<(), &'static str> {
 
     let args = Args::parse();
 
-    let mut excel: Xlsx<_> = open_workbook(args.data).map_err(|_| "Error: opening XLSX")?;
+    let data = if let Some(data_file) = args.data {
+        let mut excel: Xlsx<_> = open_workbook(data_file).map_err(|_| "Error: opening XLSX")?;
+        // Champions
+        let data = investments_forecasting::load_list(&mut excel, &args.list)?;
+        Some(data)
+    } else {
+        None
+    };
 
-    // Champions
-    let data = investments_forecasting::load_list(&mut excel, &args.list)?;
 
-
-    // For no handpicked compnies just make overall analysis
+    // For no handpicked companies just make overall analysis
     if args.company.len() == 0 {
 
         let data_shortlisted_dy = analyze_div_yield(
-            &data,
+            &data.expect("Error: unable to extract XLSX data"),
             args.sp500_divy,
             args.inflation,
             args.min_div_yield,
@@ -200,9 +213,28 @@ fn main() -> Result<(), &'static str> {
         print_summary(&data_shortlisted_dy_dp_dg,None)?;
 
     } else {
-        args.company
-            .iter()
-            .try_for_each(|symbol| print_summary(&data,Some(&symbol)))?;
+        match data {
+            Some(data) => {
+                args.company
+                    .iter()
+                    .try_for_each(|symbol| print_summary(&data,Some(&symbol)))?;
+            },
+            None => {
+                args.company
+                    .iter()
+                    .try_for_each(|symbol| {
+                            let (curr_div, divy, dgr, payout_ratio) = investments_forecasting::get_polygon_data(&symbol)?;
+
+                            let s1 = Series::new("Curr Div", &[curr_div]);
+                            let s2 = Series::new("Div Yield[%]", &[divy]);
+                            let s3 = Series::new("DGRQ[%]", &[dgr]);
+                            let s4 = Series::new("Payout ratio[%]", &[payout_ratio]);
+
+                            let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4]).unwrap();
+
+                            print_polygon_data_summary(&df,Some(&symbol))})?;
+            },
+        }
     }
     Ok(())
 }
