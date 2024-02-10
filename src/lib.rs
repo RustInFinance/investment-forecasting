@@ -212,7 +212,7 @@ pub fn get_polygon_data(company : &str) -> Result<(f64,f64,f64,f64),&'static str
         });
 
         // Curr Dividend  and corressponding date 
-        let (curr_div, curr_div_date) = match div_history.iter().rev().next() {
+        let (curr_div, _curr_div_date) = match div_history.iter().rev().next() {
             Some((pay_date,cash_amount)) => (cash_amount,NaiveDate::parse_from_str(&pay_date, "%Y-%m-%d").expect("Wrong payout date format")),
             None => panic!("No dividend Data!"),
         };
@@ -257,7 +257,7 @@ pub fn get_polygon_data(company : &str) -> Result<(f64,f64,f64,f64),&'static str
             (start_date < x_date) && (x_date< end_date)
         }).next().ok_or("Unable to get dividend from recent financial period")?;
 
-        let net_value = if let Some(ismap) = res.financials.cash_flow_statement {
+        let net_value = if let Some(ismap) = &res.financials.cash_flow_statement {
             let net_value = if ismap.contains_key("net_cash_flow_continuing") {
                 let net_cash_flow = ismap.get("net_cash_flow_continuing").expect("Error getting net_cash_flow_continuing");
                 let net_value = net_cash_flow.value.clone().unwrap();
@@ -272,10 +272,10 @@ pub fn get_polygon_data(company : &str) -> Result<(f64,f64,f64,f64),&'static str
             };
             net_value
         } else {
-            todo!("Implement missing cash_flow_statement");
+            todo!("Implement missing net_cash_flow_continuing");
         };
 
-        let basic_average_shares = if let Some(ismap) = res.financials.income_statement {
+        let basic_average_shares = if let Some(ismap) = &res.financials.income_statement {
 
             let basic_average_shares = if ismap.contains_key("basic_average_shares") {
                 let basic_average_shares = ismap.get("basic_average_shares").expect("Error getting basic_average_shares");
@@ -289,7 +289,7 @@ pub fn get_polygon_data(company : &str) -> Result<(f64,f64,f64,f64),&'static str
             };
             basic_average_shares
         } else {
-            todo!("implement getting share number without income statement");
+            todo!("Implement missing net_cash_flow_continuing");
         };
         let payout_rate = calculate_payout_ratio(*curr_div,basic_average_shares,net_value)?;
         return Ok::<(f64,f64,f64,f64), &'static str>((div.1,divy,dgr,payout_rate))
