@@ -3,7 +3,6 @@ use polars::prelude::*;
 use std::fmt;
 
 use chrono::prelude::*;
-use chrono::Duration;
 
 use std::collections::HashMap;
 use polygon_client::rest::RESTClient;
@@ -222,7 +221,7 @@ pub fn get_polygon_data(company : &str) -> Result<(f64,f64,f64,f64),&'static str
             panic!("No dividend Data!");
         };
 
-        let dgr = calculate_dgr(&div_history)?;
+        let dgr = calculate_dgr(&div_history,frequency)?;
         log::info!("Current Div: {curr_div} {currency}, Frequency: {frequency}, Average DGR(samples: {}): {dgr}",
             div_history.len());
 
@@ -373,24 +372,36 @@ fn calculate_divy(div_history: &Vec<(String,f64)>,share_price : f64, frequency :
 
 
 /// DGR On quaterly basis calculate
-fn calculate_dgr(div_history: &Vec<(String,f64)>) -> Result<f64,&'static str>{
+fn calculate_dgr(div_history: &Vec<(String,f64)>, frequency : u32) -> Result<f64,&'static str>{
   
-    let mut dhiter = div_history.iter();
-
-    let mut prev_val = match dhiter.next() {
-        Some((_,value)) => value,
-        None => return Err("No dividends samples!"),
-    };
+    let dhiter = div_history.iter();
 
     let mut average = 0.0;
-    let mut count = 0;
+    let mut count : u32= 0;
+    let mut prev_val = 0.0;
+    let mut annual_div = 0.0;
     dhiter.for_each(|(_,new_val)|{
-       average += (new_val/prev_val - 1.0)* 100.0;
        count +=1;
-       prev_val = new_val;
+       if (count % frequency) == 0  {
+           if prev_val == 0.0 {
+              average = 0.0;
+           } else {
+              average += (annual_div/prev_val - 1.0)* 100.0;
+           }
+           prev_val = annual_div;
+           annual_div = *new_val;
+       } else { 
+           annual_div += new_val;
+       }
     });
+    count/=frequency;
+    count-=1;
 
-    Ok(average/count as f64)
+    if count == 0 {
+        Ok(0.0)
+    } else {
+        Ok(average/count as f64)
+    }
 }
 
 
@@ -424,14 +435,19 @@ mod tests {
             ("2023-07-01".to_owned(),0.5),
             ("2023-11-01".to_owned(),0.5)
         ]; 
-        assert_eq!(calculate_dgr(&div_hists),Ok(0.0));
+        assert_eq!(calculate_dgr(&div_hists,4),Ok(0.0));
 
-        let div_hists : Vec<(String,f64)> = vec![("2023-01-01".to_owned(),0.5),
-            ("2023-04-01".to_owned(),1.0),
+        let div_hists : Vec<(String,f64)> = vec![
+            ("2022-01-01".to_owned(),0.1),
+            ("2022-04-01".to_owned(),0.9),
+            ("2022-07-01".to_owned(),1.0),
+            ("2022-11-01".to_owned(),1.0),
+            ("2023-01-01".to_owned(),0.5),
+            ("2023-04-01".to_owned(),0.5),
             ("2023-07-01".to_owned(),2.0),
-            ("2023-11-01".to_owned(),4.0)
+            ("2023-11-01".to_owned(),3.0),
         ]; 
-        assert_eq!(calculate_dgr(&div_hists),Ok(100.0));
+        assert_eq!(calculate_dgr(&div_hists,4),Ok(100.0));
         Ok(())
     }
 
@@ -442,7 +458,7 @@ mod tests {
     }
 
     #[test]
-    fn test_calulate_annualized_div() -> Result<(), String> {
+    fn test_calculate_annualized_div() -> Result<(), String> {
         let div_hists : Vec<(String,f64)> = vec![("2023-01-01".to_owned(),0.5),
             ("2023-04-01".to_owned(),1.0),
             ("2023-07-01".to_owned(),2.0),
