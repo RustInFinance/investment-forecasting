@@ -244,7 +244,7 @@ pub fn get_polygon_data(company : &str) -> Result<(f64,f64,f64,f64),&'static str
             Err(_) => get_annual_payout_rate(&resp,&div_history)?,
         };
 
-        return Ok::<(f64,f64,f64,f64), &'static str>((*curr_div,divy,dgr,payout_rate))
+        return Ok::<(f64,f64,f64,f64), &'static str>((*curr_div,divy,dgr,payout_rate));
     })?;
     Err("Unable to get comapny data")
 }
@@ -292,6 +292,14 @@ fn get_basic_average_shares( fd : &polygon_client::types::FinancialDimensions, c
         Ok(basic_average_shares)
 }
 
+fn calculate_annualized_div(div_history: &Vec<(String,f64)>, fiscal_year : &str) ->Result<f64,&'static str> {
+
+        let annuallized_div = div_history.iter().filter(|x| {
+            NaiveDate::parse_from_str(&x.0,"%Y-%m-%d").expect("Dividend date parsing error").year() == fiscal_year.parse::<i32>().expect("Unable to parse fiscal year")
+        }).fold(0.0, |mut acc, num| {acc += num.1; acc});
+        Ok(annuallized_div)
+}
+
 fn get_annual_payout_rate( resp : &polygon_client::types::ReferenceStockFinancialsVXResponse, div_history: &Vec<(String,f64)>) ->Result<f64,&'static str> {
 
         // Pick the most recent annual report 
@@ -303,14 +311,8 @@ fn get_annual_payout_rate( resp : &polygon_client::types::ReferenceStockFinancia
 
         log::info!("{:?}: start date: {:?}, end date: {:?}, fiscal_year: {}, timeframe: {} fiscal_period: {}", res.tickers,res.start_date,res.end_date,res.fiscal_year,res.timeframe,res.fiscal_period);
 
-        println!("FISCAL _YEAR: \"{}\"",res.fiscal_year);
-        let fiscal_year =  NaiveDate::parse_from_str(&res.fiscal_year, "%Y").expect("Wrong fiscal year format");
-
         // Div payout dates must come from chosen fiscal year
-        let annuallized_div = div_history.iter().filter(|x| {
-            let (year, _) =  NaiveDate::parse_and_remainder(&x.0, "%Y").expect("Wrong div date format");
-            year == fiscal_year
-        }).fold(0.0, |mut acc, num| {acc += num.1; acc});
+        let annuallized_div = calculate_annualized_div(div_history,&res.fiscal_year)?; 
 
         let net_value = get_net_cash_flow(&res.financials,res.company_name.as_ref(),res.fiscal_year.as_ref(),res.fiscal_period.as_ref())?;
         let basic_average_shares = get_basic_average_shares(&res.financials,res.company_name.as_ref(),res.fiscal_year.as_ref(),res.fiscal_period.as_ref())?;
@@ -438,4 +440,22 @@ mod tests {
         assert_eq!(calculate_payout_ratio(0.5,100.0,200.0),Ok(25.0));
         Ok(())
     }
+
+    #[test]
+    fn test_calulate_annualized_div() -> Result<(), String> {
+        let div_hists : Vec<(String,f64)> = vec![("2023-01-01".to_owned(),0.5),
+            ("2023-04-01".to_owned(),1.0),
+            ("2023-07-01".to_owned(),2.0),
+            ("2023-11-01".to_owned(),4.0),
+            ("2022-04-01".to_owned(),0.3),
+            ("2022-07-01".to_owned(),0.3),
+            ("2022-11-01".to_owned(),0.2),
+            ("2022-01-01".to_owned(),0.1)
+        ]; 
+
+        assert_eq!(calculate_annualized_div(&div_hists,"2023"),Ok(7.5));
+        assert_eq!(calculate_annualized_div(&div_hists,"2022"),Ok(0.9));
+        Ok(())
+    }
+
 }
