@@ -229,7 +229,7 @@ pub fn get_polygon_data(company : &str) -> Result<(f64,f64,f64,f64),&'static str
         let mut close_query_params = HashMap::new();
         close_query_params.insert("adjusted", "true");
         let resp = client.stock_equities_previous_close(company,&HashMap::new()).await.expect("Unable to get stock price");
-        let prev_day_share_data = resp.results.iter().next().ok_or("Error reading previous dat share price")?;
+        let prev_day_share_data = resp.results.iter().next().ok_or("Error reading previous date share price")?;
         let share_price = prev_day_share_data.c;
 
         let divy = calculate_divy(&div_history,share_price,frequency)?;
@@ -239,6 +239,87 @@ pub fn get_polygon_data(company : &str) -> Result<(f64,f64,f64,f64),&'static str
             .await
             .expect("failed to query tickers");
   
+        let payout_rate = match get_quaterly_payout_rate(&resp,&div_history) {
+            Ok(payout_rate) => payout_rate,
+            Err(_) => get_annual_payout_rate(&resp,&div_history)?,
+        };
+
+        return Ok::<(f64,f64,f64,f64), &'static str>((*curr_div,divy,dgr,payout_rate))
+    })?;
+    Err("Unable to get comapny data")
+}
+
+fn get_net_cash_flow( fd : &polygon_client::types::FinancialDimensions, company_name : &str, fiscal_year : &str, fiscal_period : &str) ->Result<f64,&'static str> {
+
+        let net_value = if let Some(ismap) = &fd.cash_flow_statement {
+            let net_value = if ismap.contains_key("net_cash_flow_continuing") {
+                let net_cash_flow = ismap.get("net_cash_flow_continuing").expect("Error getting net_cash_flow_continuing");
+                let net_value = net_cash_flow.value.clone().unwrap();
+                let net_unit =  net_cash_flow.unit.clone().unwrap();
+                let net_label =  net_cash_flow.label.clone().unwrap();
+                log::info!("{}: {} {} net cash flow: {} of {}, labeled as {}",company_name,fiscal_year,fiscal_period,net_value,net_unit,net_label);
+
+                // curr_div * num_shares  / net_value
+                net_value
+            } else {
+                return Err("Missing net_cash_flow_continuing");
+            };
+            net_value
+        } else {
+            return Err("Implement missing cash flow statement");
+        };
+    Ok(net_value)
+}
+
+fn get_basic_average_shares( fd : &polygon_client::types::FinancialDimensions, company_name : &str, fiscal_year : &str, fiscal_period : &str) ->Result<f64,&'static str> {
+
+        let basic_average_shares = if let Some(ismap) = &fd.income_statement {
+
+            let basic_average_shares = if ismap.contains_key("basic_average_shares") {
+                let basic_average_shares = ismap.get("basic_average_shares").expect("Error getting basic_average_shares");
+                let value = basic_average_shares.value.clone().unwrap();
+                let unit =  basic_average_shares.unit.clone().unwrap();
+                let label = basic_average_shares.label.clone().unwrap();
+                log::info!("{}: {} {} basic average shares: {} of {}, labeled as {}",company_name,fiscal_year,fiscal_period,value,unit,label);
+                value
+            } else {
+                todo!("Implement missing net_cash_flow_continuing");
+            };
+            basic_average_shares
+        } else {
+            todo!("Implement missing net_cash_flow_continuing");
+        };
+        Ok(basic_average_shares)
+}
+
+fn get_annual_payout_rate( resp : &polygon_client::types::ReferenceStockFinancialsVXResponse, div_history: &Vec<(String,f64)>) ->Result<f64,&'static str> {
+
+        // Pick the most recent annual report 
+        let res = resp.results.iter().filter(|x| x.timeframe == "annual").max_by(|x,y| {
+            let x_date =  NaiveDate::parse_from_str(&x.end_date.clone().expect("Missing end date"), "%Y-%m-%d").expect("Wrong end date format");
+            let y_date =  NaiveDate::parse_from_str(&y.end_date.clone().expect("Missing end date"), "%Y-%m-%d").expect("Wrong end date format");
+            x_date.cmp(&y_date)
+        }).ok_or("Unable to get most recent annual financial period")?;
+
+        log::info!("{:?}: start date: {:?}, end date: {:?}, fiscal_year: {}, timeframe: {} fiscal_period: {}", res.tickers,res.start_date,res.end_date,res.fiscal_year,res.timeframe,res.fiscal_period);
+
+        println!("FISCAL _YEAR: \"{}\"",res.fiscal_year);
+        let fiscal_year =  NaiveDate::parse_from_str(&res.fiscal_year, "%Y").expect("Wrong fiscal year format");
+
+        // Div payout dates must come from chosen fiscal year
+        let annuallized_div = div_history.iter().filter(|x| {
+            let (year, _) =  NaiveDate::parse_and_remainder(&x.0, "%Y").expect("Wrong div date format");
+            year == fiscal_year
+        }).fold(0.0, |mut acc, num| {acc += num.1; acc});
+
+        let net_value = get_net_cash_flow(&res.financials,res.company_name.as_ref(),res.fiscal_year.as_ref(),res.fiscal_period.as_ref())?;
+        let basic_average_shares = get_basic_average_shares(&res.financials,res.company_name.as_ref(),res.fiscal_year.as_ref(),res.fiscal_period.as_ref())?;
+        let payout_rate = calculate_payout_ratio(annuallized_div,basic_average_shares,net_value)?;
+        Ok(payout_rate)
+}
+
+fn get_quaterly_payout_rate( resp : &polygon_client::types::ReferenceStockFinancialsVXResponse, div_history: &Vec<(String,f64)>) ->Result<f64,&'static str> {
+
         // Pick the most recent finished period
         let res = resp.results.iter().filter(|x| x.timeframe == "quarterly").max_by(|x,y| {
             let x_date =  NaiveDate::parse_from_str(&x.end_date.clone().expect("Missing end date"), "%Y-%m-%d").expect("Wrong end date format");
@@ -257,45 +338,13 @@ pub fn get_polygon_data(company : &str) -> Result<(f64,f64,f64,f64),&'static str
             (start_date < x_date) && (x_date< end_date)
         }).next().ok_or("Unable to get dividend from recent financial period")?;
 
-        let net_value = if let Some(ismap) = &res.financials.cash_flow_statement {
-            let net_value = if ismap.contains_key("net_cash_flow_continuing") {
-                let net_cash_flow = ismap.get("net_cash_flow_continuing").expect("Error getting net_cash_flow_continuing");
-                let net_value = net_cash_flow.value.clone().unwrap();
-                let net_unit =  net_cash_flow.unit.clone().unwrap();
-                let net_label =  net_cash_flow.label.clone().unwrap();
-                log::info!("{}: {} {} net cash flow: {} of {}, labeled as {}",res.company_name,res.fiscal_year,res.fiscal_period,net_value,net_unit,net_label);
-
-                // curr_div * num_shares  / net_value
-                net_value
-            } else {
-                todo!("Implement missing net_cash_flow_continuing");
-            };
-            net_value
-        } else {
-            todo!("Implement missing net_cash_flow_continuing");
-        };
-
-        let basic_average_shares = if let Some(ismap) = &res.financials.income_statement {
-
-            let basic_average_shares = if ismap.contains_key("basic_average_shares") {
-                let basic_average_shares = ismap.get("basic_average_shares").expect("Error getting basic_average_shares");
-                let value = basic_average_shares.value.clone().unwrap();
-                let unit =  basic_average_shares.unit.clone().unwrap();
-                let label = basic_average_shares.label.clone().unwrap();
-                log::info!("{}: {} {} basic average shares: {} of {}, labeled as {}",res.company_name,res.fiscal_year,res.fiscal_period,value,unit,label);
-                value
-            } else {
-                todo!("Implement missing net_cash_flow_continuing");
-            };
-            basic_average_shares
-        } else {
-            todo!("Implement missing net_cash_flow_continuing");
-        };
-        let payout_rate = calculate_payout_ratio(*curr_div,basic_average_shares,net_value)?;
-        return Ok::<(f64,f64,f64,f64), &'static str>((div.1,divy,dgr,payout_rate))
-    })?;
-    Err("Unable to get comapny data")
+        let net_value = get_net_cash_flow(&res.financials,res.company_name.as_ref(),res.fiscal_year.as_ref(),res.fiscal_period.as_ref())?;
+        let basic_average_shares = get_basic_average_shares(&res.financials,res.company_name.as_ref(),res.fiscal_year.as_ref(),res.fiscal_period.as_ref())?;
+        let payout_rate = calculate_payout_ratio(div.1,basic_average_shares,net_value)?;
+        Ok(payout_rate)
 }
+
+
 
 /// DGR On quaterly basis calculate(make UT)
 fn calculate_payout_ratio(div : f64, num_shares : f64, net_value : f64) -> Result<f64,&'static str>{
