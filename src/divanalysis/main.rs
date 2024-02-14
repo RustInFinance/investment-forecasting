@@ -2,6 +2,8 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
+// TODO: Test on INTC data
+// TODO: DGR description should be fixed
 // TODO: Make possiblity to analyze selected company based on polygon.io API
 // TODO: AMCR, TFC i PXD, HSBC
 // TODO: Make UK list supported
@@ -136,7 +138,7 @@ fn analyze_div_growth(df: &DataFrame, min_growth_rate: f64) -> Result<DataFrame,
         .map_err(|_| "Could not sort along 'DGR 1Y'")
 }
 
-fn print_polygon_data_summary(df: &DataFrame, company : Option<&str>) -> Result<(), &'static str> {
+fn print_polygon_data_summary(df: &DataFrame) -> Result<(), &'static str> {
     println!("{df}");
     Ok(())
 }
@@ -186,9 +188,10 @@ fn main() -> Result<(), &'static str> {
         None
     };
 
-
+    //let company = <std::string::String as AsRef<str>>::as_ref(&args.company).to_uppercase();
+    let companies = args.company.iter().map(|x| x.to_uppercase()).collect::<Vec<String>>(); 
     // For no handpicked companies just make overall analysis
-    if args.company.len() == 0 {
+    if companies.len() == 0 {
 
         let data_shortlisted_dy = analyze_div_yield(
             &data.expect("Error: unable to extract XLSX data"),
@@ -215,12 +218,12 @@ fn main() -> Result<(), &'static str> {
     } else {
         match data {
             Some(data) => {
-                args.company
+                companies
                     .iter()
                     .try_for_each(|symbol| print_summary(&data,Some(&symbol)))?;
             },
             None => {
-                args.company
+                companies
                     .iter()
                     .try_for_each(|symbol| {
                             let (curr_div, divy, dgr, payout_ratio) = investments_forecasting::get_polygon_data(&symbol)?;
@@ -233,7 +236,7 @@ fn main() -> Result<(), &'static str> {
 
                             let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4, s5]).unwrap();
 
-                            print_polygon_data_summary(&df,Some(&symbol))})?;
+                            print_polygon_data_summary(&df)})?;
             },
         }
     }
