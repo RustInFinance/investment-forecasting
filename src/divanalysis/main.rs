@@ -225,12 +225,13 @@ fn main() -> Result<(), &'static str> {
                     .try_for_each(|symbol| {
                             let (curr_div, divy, dgr, payout_ratio) = investments_forecasting::get_polygon_data(&symbol)?;
 
-                            let s1 = Series::new("Curr Div", &[curr_div]);
-                            let s2 = Series::new("Div Yield[%]", &[divy]);
-                            let s3 = Series::new("DGRQ[%]", &[dgr]);
-                            let s4 = Series::new("Payout ratio[%]", &[payout_ratio]);
+                            let s1 = Series::new("Symbol", &[<std::string::String as AsRef<str>>::as_ref(symbol)]);
+                            let s2 = Series::new("Curr Div", &[curr_div]);
+                            let s3 = Series::new("Div Yield[%]", &[divy]);
+                            let s4 = Series::new("DGR[%]", &[dgr]);
+                            let s5 = Series::new("Payout ratio[%]", &[payout_ratio]);
 
-                            let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4]).unwrap();
+                            let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4, s5]).unwrap();
 
                             print_polygon_data_summary(&df,Some(&symbol))})?;
             },

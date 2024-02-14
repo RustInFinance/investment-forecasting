@@ -244,8 +244,7 @@ pub fn get_polygon_data(company : &str) -> Result<(f64,f64,f64,f64),&'static str
         };
 
         return Ok::<(f64,f64,f64,f64), &'static str>((*curr_div,divy,dgr,payout_rate));
-    })?;
-    Err("Unable to get comapny data")
+    })
 }
 
 fn get_net_cash_flow( fd : &polygon_client::types::FinancialDimensions, company_name : &str, fiscal_year : &str, fiscal_period : &str) ->Result<f64,&'static str> {
