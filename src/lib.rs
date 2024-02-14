@@ -210,6 +210,8 @@ pub fn get_polygon_data(company : &str) -> Result<(f64,f64,f64,f64),&'static str
            a_date.cmp(&b_date)
         });
 
+        log::info!("Ordered dividends: {div_history:#?}");
+
         // Curr Dividend  and corressponding date 
         let (curr_div, _curr_div_date) = match div_history.iter().rev().next() {
             Some((pay_date,cash_amount)) => (cash_amount,NaiveDate::parse_from_str(&pay_date, "%Y-%m-%d").expect("Wrong payout date format")),
@@ -381,6 +383,7 @@ fn calculate_dgr(div_history: &Vec<(String,f64)>, frequency : u32) -> Result<f64
     let mut annual_div = 0.0;
     dhiter.for_each(|(_,new_val)|{
        count +=1;
+       annual_div += new_val;
        if (count % frequency) == 0  {
            if prev_val == 0.0 {
               average = 0.0;
@@ -388,9 +391,7 @@ fn calculate_dgr(div_history: &Vec<(String,f64)>, frequency : u32) -> Result<f64
               average += (annual_div/prev_val - 1.0)* 100.0;
            }
            prev_val = annual_div;
-           annual_div = *new_val;
-       } else { 
-           annual_div += new_val;
+           annual_div = 0.0;
        }
     });
     count/=frequency;
@@ -408,6 +409,10 @@ fn calculate_dgr(div_history: &Vec<(String,f64)>, frequency : u32) -> Result<f64
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn round2(val : f64) -> f64 {
+        (val * 100.0).round()/100.0
+    }
 
     #[test]
     fn test_calulate_divy() -> Result<(), String> {
@@ -447,6 +452,24 @@ mod tests {
             ("2023-11-01".to_owned(),3.0),
         ]; 
         assert_eq!(calculate_dgr(&div_hists,4),Ok(100.0));
+
+
+        let div_hists : Vec<(String,f64)> = vec![
+            ("2021-12-01".to_owned(),  0.3475),
+            ("2022-03-01".to_owned(),  0.365),
+            ("2022-06-01".to_owned(),  0.365),
+            ("2022-09-01".to_owned(),  0.365),
+            ("2022-12-01".to_owned(),  0.365),
+            ("2023-03-01".to_owned(),  0.365),
+            ("2023-06-01".to_owned(),  0.125),
+            ("2023-09-01".to_owned(),  0.125),
+            ("2023-12-01".to_owned(),  0.125),
+            ("2024-03-01".to_owned(),  0.125),
+        ];
+
+        assert_eq!(Ok::<f64,&str>(round2(calculate_dgr(&div_hists,4).unwrap())),Ok(-32.06));
+
+
         Ok(())
     }
 
