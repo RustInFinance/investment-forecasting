@@ -2,10 +2,12 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
+// Get plygon companies list
 // TODO: Test on INTC data
 // TODO: Make NEt income based dividend payout rate
 // TODO: Make possiblity to analyze selected company based on polygon.io API
 // TODO: AMCR, TFC i PXD, HSBC
+// TODO: AMCR, HSBC does not work
 // TODO: Make UK list supported
 // selection
 
@@ -22,6 +24,11 @@ struct Args {
     /// Name of the list with companies increasing dividends. Possible values: "Champions", "Contenders", "Challengers", "All"
     #[arg(long, default_value = "Champions")]
     list: String,
+
+    /// List all available companies (from database if given or polygon in case of no given
+    /// database
+    #[arg(long)]
+    list_all: bool,
 
     /// Symbol names of companies from dividend list if "data" is provided and from Polygon.io API
     /// when no "data" is given
@@ -138,11 +145,6 @@ fn analyze_div_growth(df: &DataFrame, min_growth_rate: f64) -> Result<DataFrame,
         .map_err(|_| "Could not sort along 'DGR 1Y'")
 }
 
-fn print_polygon_data_summary(df: &DataFrame) -> Result<(), &'static str> {
-    println!("{df}");
-    Ok(())
-}
-
 fn print_summary(df: &DataFrame, company: Option<&str>) -> Result<(), &'static str> {
     let dfs = match company {
         Some(company) => {
@@ -198,27 +200,35 @@ fn main() -> Result<(), &'static str> {
         .collect::<Vec<String>>();
     // For no handpicked companies just make overall analysis
     if companies.len() == 0 {
-        let data_shortlisted_dy = analyze_div_yield(
-            &data.expect("Error: unable to extract XLSX data"),
-            args.sp500_divy,
-            args.inflation,
-            args.min_div_yield,
-            args.max_div_yield,
-        )?;
-        log::info!("Champions Shortlisted by DivY: {}", data_shortlisted_dy);
 
-        let data_shortlisted_dy_dp =
-            analyze_dividend_payout_rate(&data_shortlisted_dy, args.max_div_payout_rate / 100.0)?;
+        if args.list_all {
+            match data {
+                Some(database) => print_summary(&database, None)?,
+                None => (), // get polygon tickers list
+            }
+        } else {
+            let data_shortlisted_dy = analyze_div_yield(
+                &data.expect("Error: unable to extract XLSX data"),
+                args.sp500_divy,
+                args.inflation,
+                args.min_div_yield,
+                args.max_div_yield,
+            )?;
+            log::info!("Champions Shortlisted by DivY: {}", data_shortlisted_dy);
 
-        log::info!(
-            "Champions Shortlisted by DivY and Div Pay-Out: {}",
-            data_shortlisted_dy_dp
-        );
+            let data_shortlisted_dy_dp =
+                analyze_dividend_payout_rate(&data_shortlisted_dy, args.max_div_payout_rate / 100.0)?;
 
-        let data_shortlisted_dy_dp_dg =
-            analyze_div_growth(&data_shortlisted_dy_dp, args.min_div_growth_rate)?;
+            log::info!(
+                "Champions Shortlisted by DivY and Div Pay-Out: {}",
+                data_shortlisted_dy_dp
+            );
 
-        print_summary(&data_shortlisted_dy_dp_dg, None)?;
+            let data_shortlisted_dy_dp_dg =
+                analyze_div_growth(&data_shortlisted_dy_dp, args.min_div_growth_rate)?;
+
+            print_summary(&data_shortlisted_dy_dp_dg, None)?;
+        }
     } else {
         match data {
             Some(data) => {
@@ -227,23 +237,31 @@ fn main() -> Result<(), &'static str> {
                     .try_for_each(|symbol| print_summary(&data, Some(&symbol)))?;
             }
             None => {
+                let mut symbols: Vec<&str> = vec![];
+                let mut curr_divs: Vec<f64> = vec![];
+                let mut divys: Vec<f64> = vec![];
+                let mut dgrs: Vec<f64> = vec![];
+                let mut payout_ratios: Vec<f64> = vec![];
                 companies.iter().try_for_each(|symbol| {
                     let (curr_div, divy, dgr, payout_ratio) =
                         investments_forecasting::get_polygon_data(&symbol)?;
 
-                    let s1 = Series::new(
-                        "Symbol",
-                        &[<std::string::String as AsRef<str>>::as_ref(symbol)],
-                    );
-                    let s2 = Series::new("Curr Div", &[curr_div]);
-                    let s3 = Series::new("Div Yield[%]", &[divy]);
-                    let s4 = Series::new("DGR[%]", &[dgr]);
-                    let s5 = Series::new("Payout ratio[%]", &[payout_ratio]);
-
-                    let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4, s5]).unwrap();
-
-                    print_polygon_data_summary(&df)
+                    curr_divs.push(curr_div);
+                    divys.push(divy);
+                    dgrs.push(dgr);
+                    payout_ratios.push(payout_ratio);
+                    symbols.push(&symbol);
+                    Ok::<(), &'static str>(())
                 })?;
+
+                let s1 = Series::new("Symbol", &symbols);
+                let s2 = Series::new("Curr Div", curr_divs);
+                let s3 = Series::new("Div Yield[%]", divys);
+                let s4 = Series::new("DGR[%]", dgrs);
+                let s5 = Series::new("Payout ratio[%]", payout_ratios);
+
+                let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4, s5]).unwrap();
+                println!("{df}");
             }
         }
     }

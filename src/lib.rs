@@ -179,7 +179,7 @@ fn should_try_again<T>(maybe_resp: Result<T, reqwest::Error>, dummy: T) -> (T, b
             log::info!("Error: {:?}", e.status());
             let repeat = if let Some(status) = e.status() {
                 if status == 429 {
-                    log::info!("Waiting for 30 s and rerunning query");
+                    println!("Waiting for 30 s and rerunning query");
                     let thirty_secs = std::time::Duration::new(30, 0);
                     std::thread::sleep(thirty_secs);
                     true
