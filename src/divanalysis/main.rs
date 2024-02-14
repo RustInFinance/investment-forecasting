@@ -3,13 +3,13 @@ use clap::Parser;
 use polars::prelude::*;
 
 // TODO: Test on INTC data
-// TODO: DGR description should be fixed
+// TODO: Make NEt income based dividend payout rate
 // TODO: Make possiblity to analyze selected company based on polygon.io API
 // TODO: AMCR, TFC i PXD, HSBC
 // TODO: Make UK list supported
 // selection
 
-// TODO: Change to Result fully in get_polygon_data.   
+// TODO: Change to Result fully in get_polygon_data.
 
 /// Program to help to analyze Dividend companies (Fetch XLSX list from: https://moneyzine.com/investments/dividend-champions/)
 #[derive(Parser, Debug)]
@@ -143,27 +143,29 @@ fn print_polygon_data_summary(df: &DataFrame) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn print_summary(df: &DataFrame, company : Option<&str>) -> Result<(), &'static str> {
-
+fn print_summary(df: &DataFrame, company: Option<&str>) -> Result<(), &'static str> {
     let dfs = match company {
         Some(company) => {
-           let mask = df.column("Symbol").map_err(|_| "Error: Unable to get Symbol")?
-        .equal(company).map_err(|_| "Error: Unable to create mask")?;
-        df.filter(&mask).map_err(|_| "Error: Unable to get Symbol")?
+            let mask = df
+                .column("Symbol")
+                .map_err(|_| "Error: Unable to get Symbol")?
+                .equal(company)
+                .map_err(|_| "Error: Unable to create mask")?;
+            df.filter(&mask)
+                .map_err(|_| "Error: Unable to get Symbol")?
         }
-        ,
         None => df.clone(),
     };
     if dfs.height() == 0 {
         return Err("Company symbol not present in selected List");
     }
 
-    let mut selected_df = dfs.select(&["Symbol", "Company", "Current Div", "Div Yield", "Price"]) .map_err(|_| "Unable to select mentioned columns!")?;
+    let mut selected_df = dfs
+        .select(&["Symbol", "Company", "Current Div", "Div Yield", "Price"])
+        .map_err(|_| "Unable to select mentioned columns!")?;
     log::info!("Selected companies: {selected_df}");
 
-    let mut rate = dfs
-        .column("Annualized")
-        .expect("No \"Current Div\" column")
+    let mut rate = dfs.column("Annualized").expect("No \"Current Div\" column")
         / dfs.column("CF/Share").expect("No \"CF/Share\" column")
         * 100.0;
     let rate = rate.rename("Div Payout Rate[%]");
@@ -189,10 +191,13 @@ fn main() -> Result<(), &'static str> {
     };
 
     //let company = <std::string::String as AsRef<str>>::as_ref(&args.company).to_uppercase();
-    let companies = args.company.iter().map(|x| x.to_uppercase()).collect::<Vec<String>>(); 
+    let companies = args
+        .company
+        .iter()
+        .map(|x| x.to_uppercase())
+        .collect::<Vec<String>>();
     // For no handpicked companies just make overall analysis
     if companies.len() == 0 {
-
         let data_shortlisted_dy = analyze_div_yield(
             &data.expect("Error: unable to extract XLSX data"),
             args.sp500_divy,
@@ -213,31 +218,33 @@ fn main() -> Result<(), &'static str> {
         let data_shortlisted_dy_dp_dg =
             analyze_div_growth(&data_shortlisted_dy_dp, args.min_div_growth_rate)?;
 
-        print_summary(&data_shortlisted_dy_dp_dg,None)?;
-
+        print_summary(&data_shortlisted_dy_dp_dg, None)?;
     } else {
         match data {
             Some(data) => {
                 companies
                     .iter()
-                    .try_for_each(|symbol| print_summary(&data,Some(&symbol)))?;
-            },
+                    .try_for_each(|symbol| print_summary(&data, Some(&symbol)))?;
+            }
             None => {
-                companies
-                    .iter()
-                    .try_for_each(|symbol| {
-                            let (curr_div, divy, dgr, payout_ratio) = investments_forecasting::get_polygon_data(&symbol)?;
+                companies.iter().try_for_each(|symbol| {
+                    let (curr_div, divy, dgr, payout_ratio) =
+                        investments_forecasting::get_polygon_data(&symbol)?;
 
-                            let s1 = Series::new("Symbol", &[<std::string::String as AsRef<str>>::as_ref(symbol)]);
-                            let s2 = Series::new("Curr Div", &[curr_div]);
-                            let s3 = Series::new("Div Yield[%]", &[divy]);
-                            let s4 = Series::new("DGR[%]", &[dgr]);
-                            let s5 = Series::new("Payout ratio[%]", &[payout_ratio]);
+                    let s1 = Series::new(
+                        "Symbol",
+                        &[<std::string::String as AsRef<str>>::as_ref(symbol)],
+                    );
+                    let s2 = Series::new("Curr Div", &[curr_div]);
+                    let s3 = Series::new("Div Yield[%]", &[divy]);
+                    let s4 = Series::new("DGR[%]", &[dgr]);
+                    let s5 = Series::new("Payout ratio[%]", &[payout_ratio]);
 
-                            let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4, s5]).unwrap();
+                    let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4, s5]).unwrap();
 
-                            print_polygon_data_summary(&df)})?;
-            },
+                    print_polygon_data_summary(&df)
+                })?;
+            }
         }
     }
     Ok(())

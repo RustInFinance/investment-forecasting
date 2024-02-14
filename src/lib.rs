@@ -4,8 +4,8 @@ use std::fmt;
 
 use chrono::prelude::*;
 
-use std::collections::HashMap;
 use polygon_client::rest::RESTClient;
+use std::collections::HashMap;
 
 pub fn load_list<R>(excel: &mut Xlsx<R>, category: &str) -> Result<DataFrame, &'static str>
 where
@@ -53,7 +53,6 @@ where
 
         // Iterate through rows of actual sold transactions
         for row in rows {
-
             for (i, cell) in row.iter().enumerate() {
                 match cell {
                     calamine::DataType::Float(f) => {
@@ -131,7 +130,10 @@ where
             let s = Series::new(columns[*k], v);
             df_series.push(s);
         });
-        df = DataFrame::new(df_series).map_err(|msg| { log::error!("DF error: {msg}") ;"Error: Could not create DataFrame"})?;
+        df = DataFrame::new(df_series).map_err(|msg| {
+            log::error!("DF error: {msg}");
+            "Error: Could not create DataFrame"
+        })?;
     }
 
     Ok(df)
@@ -170,24 +172,32 @@ pub fn init_logging_infrastructure() {
     }
     simple_logger::SimpleLogger::new().env().init().unwrap();
 }
+fn should_try_again<T>(maybe_resp: Result<T, reqwest::Error>, dummy: T) -> (T, bool) {
+    match maybe_resp {
+        Ok(r) => (r, false),
+        Err(e) => {
+            log::info!("Error: {:?}", e.status());
+            let repeat = if let Some(status) = e.status() {
+                if status == 429 {
+                    log::info!("Waiting for 30 s and rerunning query");
+                    let thirty_secs = std::time::Duration::new(30, 0);
+                    std::thread::sleep(thirty_secs);
+                    true
+                } else {
+                    panic!("POLYGON API: failed to query tickers");
+                }
+            } else {
+                panic!("POLYGON API: failed to query tickers");
+            };
+            (dummy, repeat)
+        }
+    }
+}
 
-
-//pub struct ReferenceStockDividendsResultV3 {
-//    pub cash_amount: f64,
-//    pub currency: String,
-//    pub declaration_date: String,
-//    pub dividend_type: DividendType,
-//    pub ex_dividend_date: String,
-//    pub frequency: u32,
-//    pub pay_date: String,
-//    pub record_date: String,
-//    pub ticker: String,
-//}
-
-pub fn get_polygon_data(company : &str) -> Result<(f64,f64,f64,f64),&'static str>{
+pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, f64), &'static str> {
     let mut query_params = HashMap::new();
     query_params.insert("ticker", company);
-    
+
     let client = RESTClient::new(None, None);
     // Get all dividend data we can have
     tokio::runtime::Builder::new_multi_thread()
@@ -195,9 +205,15 @@ pub fn get_polygon_data(company : &str) -> Result<(f64,f64,f64,f64),&'static str
             .build()
             .unwrap()
             .block_on(async {
-                 let resp = client.reference_stock_dividends(&query_params)
-        .await
-        .expect("POLYGON API: failed to query tickers");
+
+        let mut run = true;
+        let mut resp = polygon_client::types::ReferenceStockDividendsResponse{next_url : None, results  : vec![], status : "OK".to_owned()};
+
+        while run {
+            let maybe_resp = client.reference_stock_dividends(&query_params).await;
+            log::info!("RESPONSE(DIVIDENDS): {resp:#?}");
+            (resp,run) = should_try_again(maybe_resp,resp);
+        }
 
         let mut div_history : Vec<(String,f64)> = resp.results.iter().map(|x| {
             log::info!("{}: ex date: {}, payment date: {}, frequency: {}, div type: {} amount: {}", x.ticker,x.ex_dividend_date,x.pay_date,x.frequency,x.dividend_type,x.cash_amount);
@@ -229,17 +245,29 @@ pub fn get_polygon_data(company : &str) -> Result<(f64,f64,f64,f64),&'static str
 
         let mut close_query_params = HashMap::new();
         close_query_params.insert("adjusted", "true");
-        let resp = client.stock_equities_previous_close(company,&HashMap::new()).await.expect("Unable to get stock price");
+
+        run = true;
+        let mut resp = polygon_client::types::StockEquitiesPreviousCloseResponse{ticker: "".to_owned(),results  : vec![], count : 0, query_count : 0, results_count : 0, status : "OK".to_owned(), adjusted : false};
+        while run {
+            let maybe_resp = client.stock_equities_previous_close(company,&HashMap::new()).await;
+            log::info!("RESPONSE(STOCK EQUITIES): {resp:#?}");
+            (resp,run) = should_try_again(maybe_resp,resp);
+        }
+
         let prev_day_share_data = resp.results.iter().next().ok_or("Error reading previous date share price")?;
         let share_price = prev_day_share_data.c;
 
         let divy = calculate_divy(&div_history,share_price,frequency)?;
         log::info!("Stock price: {share_price}, Div Yield[%]: {divy:.2}");
 
-        let resp = client.reference_stock_financials_vx(&query_params)
-            .await
-            .expect("failed to query tickers");
-  
+        run = true;
+        let mut resp = polygon_client::types::ReferenceStockFinancialsVXResponse{next_url : None, results  : vec![], status : "OK".to_owned(), request_id : None};
+        while run {
+            let maybe_resp = client.reference_stock_financials_vx(&query_params).await;
+            log::info!("RESPONSE(STOCK FINANCIALS): {resp:#?}");
+            (resp,run) = should_try_again(maybe_resp,resp);
+        }
+
         let payout_rate = match get_quaterly_payout_rate(&resp,&div_history) {
             Ok(payout_rate) => payout_rate,
             Err(_) => get_annual_payout_rate(&resp,&div_history)?,
@@ -249,251 +277,376 @@ pub fn get_polygon_data(company : &str) -> Result<(f64,f64,f64,f64),&'static str
     })
 }
 
-fn get_net_cash_flow( fd : &polygon_client::types::FinancialDimensions, company_name : &str, fiscal_year : &str, fiscal_period : &str) ->Result<f64,&'static str> {
+fn get_net_cash_flow(
+    fd: &polygon_client::types::FinancialDimensions,
+    company_name: &str,
+    fiscal_year: &str,
+    fiscal_period: &str,
+) -> Result<f64, &'static str> {
+    let net_value = if let Some(ismap) = &fd.cash_flow_statement {
+        let net_value = if ismap.contains_key("net_cash_flow_continuing") {
+            let net_cash_flow = ismap
+                .get("net_cash_flow_continuing")
+                .expect("Error getting net_cash_flow_continuing");
+            let net_value = net_cash_flow.value.clone().unwrap();
+            let net_unit = net_cash_flow.unit.clone().unwrap();
+            let net_label = net_cash_flow.label.clone().unwrap();
+            log::info!(
+                "{}: {} {} net cash flow: {} of {}, labeled as {}",
+                company_name,
+                fiscal_year,
+                fiscal_period,
+                net_value,
+                net_unit,
+                net_label
+            );
 
-        let net_value = if let Some(ismap) = &fd.cash_flow_statement {
-            let net_value = if ismap.contains_key("net_cash_flow_continuing") {
-                let net_cash_flow = ismap.get("net_cash_flow_continuing").expect("Error getting net_cash_flow_continuing");
-                let net_value = net_cash_flow.value.clone().unwrap();
-                let net_unit =  net_cash_flow.unit.clone().unwrap();
-                let net_label =  net_cash_flow.label.clone().unwrap();
-                log::info!("{}: {} {} net cash flow: {} of {}, labeled as {}",company_name,fiscal_year,fiscal_period,net_value,net_unit,net_label);
-
-                // curr_div * num_shares  / net_value
-                net_value
-            } else {
-                return Err("Missing net_cash_flow_continuing");
-            };
+            // curr_div * num_shares  / net_value
             net_value
         } else {
-            return Err("Implement missing cash flow statement");
+            return Err("Missing net_cash_flow_continuing");
         };
+        net_value
+    } else {
+        return Err("Implement missing cash flow statement");
+    };
     Ok(net_value)
 }
 
-fn get_basic_average_shares( fd : &polygon_client::types::FinancialDimensions, company_name : &str, fiscal_year : &str, fiscal_period : &str) ->Result<f64,&'static str> {
-
-        let basic_average_shares = if let Some(ismap) = &fd.income_statement {
-
-            let basic_average_shares = if ismap.contains_key("basic_average_shares") {
-                let basic_average_shares = ismap.get("basic_average_shares").expect("Error getting basic_average_shares");
-                let value = basic_average_shares.value.clone().unwrap();
-                let unit =  basic_average_shares.unit.clone().unwrap();
-                let label = basic_average_shares.label.clone().unwrap();
-                log::info!("{}: {} {} basic average shares: {} of {}, labeled as {}",company_name,fiscal_year,fiscal_period,value,unit,label);
-                value
-            } else {
-                todo!("Implement missing net_cash_flow_continuing");
-            };
-            basic_average_shares
+fn get_basic_average_shares(
+    fd: &polygon_client::types::FinancialDimensions,
+    company_name: &str,
+    fiscal_year: &str,
+    fiscal_period: &str,
+) -> Result<f64, &'static str> {
+    let basic_average_shares = if let Some(ismap) = &fd.income_statement {
+        let basic_average_shares = if ismap.contains_key("basic_average_shares") {
+            let basic_average_shares = ismap
+                .get("basic_average_shares")
+                .expect("Error getting basic_average_shares");
+            let value = basic_average_shares.value.clone().unwrap();
+            let unit = basic_average_shares.unit.clone().unwrap();
+            let label = basic_average_shares.label.clone().unwrap();
+            log::info!(
+                "{}: {} {} basic average shares: {} of {}, labeled as {}",
+                company_name,
+                fiscal_year,
+                fiscal_period,
+                value,
+                unit,
+                label
+            );
+            value
         } else {
             todo!("Implement missing net_cash_flow_continuing");
         };
-        Ok(basic_average_shares)
+        basic_average_shares
+    } else {
+        todo!("Implement missing net_cash_flow_continuing");
+    };
+    Ok(basic_average_shares)
 }
 
-fn calculate_annualized_div(div_history: &Vec<(String,f64)>, fiscal_year : &str) ->Result<f64,&'static str> {
-
-        let annuallized_div = div_history.iter().filter(|x| {
-            NaiveDate::parse_from_str(&x.0,"%Y-%m-%d").expect("Dividend date parsing error").year() == fiscal_year.parse::<i32>().expect("Unable to parse fiscal year")
-        }).fold(0.0, |mut acc, num| {acc += num.1; acc});
-        Ok(annuallized_div)
+fn calculate_annualized_div(
+    div_history: &Vec<(String, f64)>,
+    fiscal_year: &str,
+) -> Result<f64, &'static str> {
+    let annuallized_div = div_history
+        .iter()
+        .filter(|x| {
+            NaiveDate::parse_from_str(&x.0, "%Y-%m-%d")
+                .expect("Dividend date parsing error")
+                .year()
+                == fiscal_year
+                    .parse::<i32>()
+                    .expect("Unable to parse fiscal year")
+        })
+        .fold(0.0, |mut acc, num| {
+            acc += num.1;
+            acc
+        });
+    Ok(annuallized_div)
 }
 
-fn get_annual_payout_rate( resp : &polygon_client::types::ReferenceStockFinancialsVXResponse, div_history: &Vec<(String,f64)>) ->Result<f64,&'static str> {
-
-        // Pick the most recent annual report 
-        let res = resp.results.iter().filter(|x| x.timeframe == "annual").max_by(|x,y| {
-            let x_date =  NaiveDate::parse_from_str(&x.end_date.clone().expect("Missing end date"), "%Y-%m-%d").expect("Wrong end date format");
-            let y_date =  NaiveDate::parse_from_str(&y.end_date.clone().expect("Missing end date"), "%Y-%m-%d").expect("Wrong end date format");
+fn get_annual_payout_rate(
+    resp: &polygon_client::types::ReferenceStockFinancialsVXResponse,
+    div_history: &Vec<(String, f64)>,
+) -> Result<f64, &'static str> {
+    // Pick the most recent annual report
+    let res = resp
+        .results
+        .iter()
+        .filter(|x| x.timeframe == "annual")
+        .max_by(|x, y| {
+            let x_date = NaiveDate::parse_from_str(
+                &x.end_date.clone().expect("Missing end date"),
+                "%Y-%m-%d",
+            )
+            .expect("Wrong end date format");
+            let y_date = NaiveDate::parse_from_str(
+                &y.end_date.clone().expect("Missing end date"),
+                "%Y-%m-%d",
+            )
+            .expect("Wrong end date format");
             x_date.cmp(&y_date)
-        }).ok_or("Unable to get most recent annual financial period")?;
+        })
+        .ok_or("Unable to get most recent annual financial period")?;
 
-        log::info!("{:?}: start date: {:?}, end date: {:?}, fiscal_year: {}, timeframe: {} fiscal_period: {}", res.tickers,res.start_date,res.end_date,res.fiscal_year,res.timeframe,res.fiscal_period);
+    log::info!(
+        "{:?}: start date: {:?}, end date: {:?}, fiscal_year: {}, timeframe: {} fiscal_period: {}",
+        res.tickers,
+        res.start_date,
+        res.end_date,
+        res.fiscal_year,
+        res.timeframe,
+        res.fiscal_period
+    );
 
-        // Div payout dates must come from chosen fiscal year
-        let annuallized_div = calculate_annualized_div(div_history,&res.fiscal_year)?; 
+    // Div payout dates must come from chosen fiscal year
+    let annuallized_div = calculate_annualized_div(div_history, &res.fiscal_year)?;
 
-        let net_value = get_net_cash_flow(&res.financials,res.company_name.as_ref(),res.fiscal_year.as_ref(),res.fiscal_period.as_ref())?;
-        let basic_average_shares = get_basic_average_shares(&res.financials,res.company_name.as_ref(),res.fiscal_year.as_ref(),res.fiscal_period.as_ref())?;
-        let payout_rate = calculate_payout_ratio(annuallized_div,basic_average_shares,net_value)?;
-        Ok(payout_rate)
+    let net_value = get_net_cash_flow(
+        &res.financials,
+        res.company_name.as_ref(),
+        res.fiscal_year.as_ref(),
+        res.fiscal_period.as_ref(),
+    )?;
+    let basic_average_shares = get_basic_average_shares(
+        &res.financials,
+        res.company_name.as_ref(),
+        res.fiscal_year.as_ref(),
+        res.fiscal_period.as_ref(),
+    )?;
+    let payout_rate = calculate_payout_ratio(annuallized_div, basic_average_shares, net_value)?;
+    Ok(payout_rate)
 }
 
-fn get_quaterly_payout_rate( resp : &polygon_client::types::ReferenceStockFinancialsVXResponse, div_history: &Vec<(String,f64)>) ->Result<f64,&'static str> {
-
-        // Pick the most recent finished period
-        let res = resp.results.iter().filter(|x| x.timeframe == "quarterly").max_by(|x,y| {
-            let x_date =  NaiveDate::parse_from_str(&x.end_date.clone().expect("Missing end date"), "%Y-%m-%d").expect("Wrong end date format");
-            let y_date =  NaiveDate::parse_from_str(&y.end_date.clone().expect("Missing end date"), "%Y-%m-%d").expect("Wrong end date format");
+fn get_quaterly_payout_rate(
+    resp: &polygon_client::types::ReferenceStockFinancialsVXResponse,
+    div_history: &Vec<(String, f64)>,
+) -> Result<f64, &'static str> {
+    // Pick the most recent finished period
+    let res = resp
+        .results
+        .iter()
+        .filter(|x| x.timeframe == "quarterly")
+        .max_by(|x, y| {
+            let x_date = NaiveDate::parse_from_str(
+                &x.end_date.clone().expect("Missing end date"),
+                "%Y-%m-%d",
+            )
+            .expect("Wrong end date format");
+            let y_date = NaiveDate::parse_from_str(
+                &y.end_date.clone().expect("Missing end date"),
+                "%Y-%m-%d",
+            )
+            .expect("Wrong end date format");
             x_date.cmp(&y_date)
-        }).ok_or("Unable to get most recent financial period")?;
+        })
+        .ok_or("Unable to get most recent financial period")?;
 
-        log::info!("{:?}: start date: {:?}, end date: {:?}, fiscal_year: {}, timeframe: {} fiscal_period: {}", res.tickers,res.start_date,res.end_date,res.fiscal_year,res.timeframe,res.fiscal_period);
-        
-        let start_date =  NaiveDate::parse_from_str(&res.start_date.clone().expect("Missing start date"), "%Y-%m-%d").expect("Wrong start date format");
-        let end_date =  NaiveDate::parse_from_str(&res.end_date.clone().expect("Missing end date"), "%Y-%m-%d").expect("Wrong end date format");
+    log::info!(
+        "{:?}: start date: {:?}, end date: {:?}, fiscal_year: {}, timeframe: {} fiscal_period: {}",
+        res.tickers,
+        res.start_date,
+        res.end_date,
+        res.fiscal_year,
+        res.timeframe,
+        res.fiscal_period
+    );
 
-        // Div payout date must be within start and end of quarter
-        let div = div_history.iter().filter(|x| {
-            let x_date =  NaiveDate::parse_from_str(&x.0, "%Y-%m-%d").expect("Wrong end date format");
-            (start_date < x_date) && (x_date< end_date)
-        }).next().ok_or("Unable to get dividend from recent financial period")?;
+    let start_date = NaiveDate::parse_from_str(
+        &res.start_date.clone().expect("Missing start date"),
+        "%Y-%m-%d",
+    )
+    .expect("Wrong start date format");
+    let end_date =
+        NaiveDate::parse_from_str(&res.end_date.clone().expect("Missing end date"), "%Y-%m-%d")
+            .expect("Wrong end date format");
 
-        let net_value = get_net_cash_flow(&res.financials,res.company_name.as_ref(),res.fiscal_year.as_ref(),res.fiscal_period.as_ref())?;
-        let basic_average_shares = get_basic_average_shares(&res.financials,res.company_name.as_ref(),res.fiscal_year.as_ref(),res.fiscal_period.as_ref())?;
-        let payout_rate = calculate_payout_ratio(div.1,basic_average_shares,net_value)?;
-        Ok(payout_rate)
+    // Div payout date must be within start and end of quarter
+    let div = div_history
+        .iter()
+        .filter(|x| {
+            let x_date =
+                NaiveDate::parse_from_str(&x.0, "%Y-%m-%d").expect("Wrong end date format");
+            (start_date < x_date) && (x_date < end_date)
+        })
+        .next()
+        .ok_or("Unable to get dividend from recent financial period")?;
+
+    let net_value = get_net_cash_flow(
+        &res.financials,
+        res.company_name.as_ref(),
+        res.fiscal_year.as_ref(),
+        res.fiscal_period.as_ref(),
+    )?;
+    let basic_average_shares = get_basic_average_shares(
+        &res.financials,
+        res.company_name.as_ref(),
+        res.fiscal_year.as_ref(),
+        res.fiscal_period.as_ref(),
+    )?;
+    let payout_rate = calculate_payout_ratio(div.1, basic_average_shares, net_value)?;
+    Ok(payout_rate)
 }
-
-
 
 /// DGR On quaterly basis calculate(make UT)
-fn calculate_payout_ratio(div : f64, num_shares : f64, net_value : f64) -> Result<f64,&'static str>{
-
+fn calculate_payout_ratio(div: f64, num_shares: f64, net_value: f64) -> Result<f64, &'static str> {
     let payout_rate = div * num_shares as f64 / net_value * 100.0;
     Ok(payout_rate)
 }
 
-
-
 /// Calculate dividend yield
-/// Formula : get historical data e.g. from 
-fn calculate_divy(div_history: &Vec<(String,f64)>,share_price : f64, frequency : u32) -> Result<f64,&'static str>{
-   if div_history.len() < frequency as usize {
-       let div_info = div_history.iter().rev().next().ok_or("Unable to get dividend value")?;
-       Ok(div_info.1/share_price *frequency as f64*100.0)
-   } else {
-       let end = div_history.len();
-       let annual_dividends = div_history.get(end - frequency as usize..end).ok_or("Error getting anuallized dividend")?;
-       let annualized_div = annual_dividends.iter().fold(0.0, |mut acc, num| {acc += num.1; acc});
-       Ok(annualized_div/share_price*100.0)
-   }
+/// Formula : get historical data e.g. from
+fn calculate_divy(
+    div_history: &Vec<(String, f64)>,
+    share_price: f64,
+    frequency: u32,
+) -> Result<f64, &'static str> {
+    if div_history.len() < frequency as usize {
+        let div_info = div_history
+            .iter()
+            .rev()
+            .next()
+            .ok_or("Unable to get dividend value")?;
+        Ok(div_info.1 / share_price * frequency as f64 * 100.0)
+    } else {
+        let end = div_history.len();
+        let annual_dividends = div_history
+            .get(end - frequency as usize..end)
+            .ok_or("Error getting anuallized dividend")?;
+        let annualized_div = annual_dividends.iter().fold(0.0, |mut acc, num| {
+            acc += num.1;
+            acc
+        });
+        Ok(annualized_div / share_price * 100.0)
+    }
 }
 
-
 /// DGR On quaterly basis calculate
-fn calculate_dgr(div_history: &Vec<(String,f64)>, frequency : u32) -> Result<f64,&'static str>{
-  
+fn calculate_dgr(div_history: &Vec<(String, f64)>, frequency: u32) -> Result<f64, &'static str> {
     let dhiter = div_history.iter();
 
     let mut average = 0.0;
-    let mut count : u32= 0;
+    let mut count: u32 = 0;
     let mut prev_val = 0.0;
     let mut annual_div = 0.0;
-    dhiter.for_each(|(_,new_val)|{
-       count +=1;
-       annual_div += new_val;
-       if (count % frequency) == 0  {
-           if prev_val == 0.0 {
-              average = 0.0;
-           } else {
-              average += (annual_div/prev_val - 1.0)* 100.0;
-           }
-           prev_val = annual_div;
-           annual_div = 0.0;
-       }
+    dhiter.for_each(|(_, new_val)| {
+        count += 1;
+        annual_div += new_val;
+        if (count % frequency) == 0 {
+            if prev_val == 0.0 {
+                average = 0.0;
+            } else {
+                average += (annual_div / prev_val - 1.0) * 100.0;
+            }
+            prev_val = annual_div;
+            annual_div = 0.0;
+        }
     });
-    count/=frequency;
-    count-=1;
+    count /= frequency;
+    count -= 1;
 
     if count == 0 {
         Ok(0.0)
     } else {
-        Ok(average/count as f64)
+        Ok(average / count as f64)
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn round2(val : f64) -> f64 {
-        (val * 100.0).round()/100.0
+    fn round2(val: f64) -> f64 {
+        (val * 100.0).round() / 100.0
     }
 
     #[test]
     fn test_calulate_divy() -> Result<(), String> {
-        let div_hists : Vec<(String,f64)> = vec![("2023-01-01".to_owned(),0.5),
-            ("2023-04-01".to_owned(),0.5),
-            ("2023-07-01".to_owned(),0.5),
-            ("2023-11-01".to_owned(),0.5)
-        ]; 
-        assert_eq!(calculate_divy(&div_hists,100.0,4),Ok(2.0));
+        let div_hists: Vec<(String, f64)> = vec![
+            ("2023-01-01".to_owned(), 0.5),
+            ("2023-04-01".to_owned(), 0.5),
+            ("2023-07-01".to_owned(), 0.5),
+            ("2023-11-01".to_owned(), 0.5),
+        ];
+        assert_eq!(calculate_divy(&div_hists, 100.0, 4), Ok(2.0));
 
-        let div_hists : Vec<(String,f64)> = vec![("2023-01-01".to_owned(),1.0),
-            ("2023-04-01".to_owned(),1.0),
-            ("2023-07-01".to_owned(),2.0),
-            ("2023-11-01".to_owned(),4.0)
-        ]; 
-        assert_eq!(calculate_divy(&div_hists,100.0,4),Ok(8.0));
+        let div_hists: Vec<(String, f64)> = vec![
+            ("2023-01-01".to_owned(), 1.0),
+            ("2023-04-01".to_owned(), 1.0),
+            ("2023-07-01".to_owned(), 2.0),
+            ("2023-11-01".to_owned(), 4.0),
+        ];
+        assert_eq!(calculate_divy(&div_hists, 100.0, 4), Ok(8.0));
         Ok(())
     }
 
     #[test]
     fn test_calulate_dgr() -> Result<(), String> {
-        let div_hists : Vec<(String,f64)> = vec![("2023-01-01".to_owned(),0.5),
-            ("2023-04-01".to_owned(),0.5),
-            ("2023-07-01".to_owned(),0.5),
-            ("2023-11-01".to_owned(),0.5)
-        ]; 
-        assert_eq!(calculate_dgr(&div_hists,4),Ok(0.0));
+        let div_hists: Vec<(String, f64)> = vec![
+            ("2023-01-01".to_owned(), 0.5),
+            ("2023-04-01".to_owned(), 0.5),
+            ("2023-07-01".to_owned(), 0.5),
+            ("2023-11-01".to_owned(), 0.5),
+        ];
+        assert_eq!(calculate_dgr(&div_hists, 4), Ok(0.0));
 
-        let div_hists : Vec<(String,f64)> = vec![
-            ("2022-01-01".to_owned(),0.1),
-            ("2022-04-01".to_owned(),0.9),
-            ("2022-07-01".to_owned(),1.0),
-            ("2022-11-01".to_owned(),1.0),
-            ("2023-01-01".to_owned(),0.5),
-            ("2023-04-01".to_owned(),0.5),
-            ("2023-07-01".to_owned(),2.0),
-            ("2023-11-01".to_owned(),3.0),
-        ]; 
-        assert_eq!(calculate_dgr(&div_hists,4),Ok(100.0));
+        let div_hists: Vec<(String, f64)> = vec![
+            ("2022-01-01".to_owned(), 0.1),
+            ("2022-04-01".to_owned(), 0.9),
+            ("2022-07-01".to_owned(), 1.0),
+            ("2022-11-01".to_owned(), 1.0),
+            ("2023-01-01".to_owned(), 0.5),
+            ("2023-04-01".to_owned(), 0.5),
+            ("2023-07-01".to_owned(), 2.0),
+            ("2023-11-01".to_owned(), 3.0),
+        ];
+        assert_eq!(calculate_dgr(&div_hists, 4), Ok(100.0));
 
-
-        let div_hists : Vec<(String,f64)> = vec![
-            ("2021-12-01".to_owned(),  0.3475),
-            ("2022-03-01".to_owned(),  0.365),
-            ("2022-06-01".to_owned(),  0.365),
-            ("2022-09-01".to_owned(),  0.365),
-            ("2022-12-01".to_owned(),  0.365),
-            ("2023-03-01".to_owned(),  0.365),
-            ("2023-06-01".to_owned(),  0.125),
-            ("2023-09-01".to_owned(),  0.125),
-            ("2023-12-01".to_owned(),  0.125),
-            ("2024-03-01".to_owned(),  0.125),
+        let div_hists: Vec<(String, f64)> = vec![
+            ("2021-12-01".to_owned(), 0.3475),
+            ("2022-03-01".to_owned(), 0.365),
+            ("2022-06-01".to_owned(), 0.365),
+            ("2022-09-01".to_owned(), 0.365),
+            ("2022-12-01".to_owned(), 0.365),
+            ("2023-03-01".to_owned(), 0.365),
+            ("2023-06-01".to_owned(), 0.125),
+            ("2023-09-01".to_owned(), 0.125),
+            ("2023-12-01".to_owned(), 0.125),
+            ("2024-03-01".to_owned(), 0.125),
         ];
 
-        assert_eq!(Ok::<f64,&str>(round2(calculate_dgr(&div_hists,4).unwrap())),Ok(-32.06));
-
+        assert_eq!(
+            Ok::<f64, &str>(round2(calculate_dgr(&div_hists, 4).unwrap())),
+            Ok(-32.06)
+        );
 
         Ok(())
     }
 
     #[test]
     fn test_calulate_payout_rate() -> Result<(), String> {
-        assert_eq!(calculate_payout_ratio(0.5,100.0,200.0),Ok(25.0));
+        assert_eq!(calculate_payout_ratio(0.5, 100.0, 200.0), Ok(25.0));
         Ok(())
     }
 
     #[test]
     fn test_calculate_annualized_div() -> Result<(), String> {
-        let div_hists : Vec<(String,f64)> = vec![("2023-01-01".to_owned(),0.5),
-            ("2023-04-01".to_owned(),1.0),
-            ("2023-07-01".to_owned(),2.0),
-            ("2023-11-01".to_owned(),4.0),
-            ("2022-04-01".to_owned(),0.3),
-            ("2022-07-01".to_owned(),0.3),
-            ("2022-11-01".to_owned(),0.2),
-            ("2022-01-01".to_owned(),0.1)
-        ]; 
+        let div_hists: Vec<(String, f64)> = vec![
+            ("2023-01-01".to_owned(), 0.5),
+            ("2023-04-01".to_owned(), 1.0),
+            ("2023-07-01".to_owned(), 2.0),
+            ("2023-11-01".to_owned(), 4.0),
+            ("2022-04-01".to_owned(), 0.3),
+            ("2022-07-01".to_owned(), 0.3),
+            ("2022-11-01".to_owned(), 0.2),
+            ("2022-01-01".to_owned(), 0.1),
+        ];
 
-        assert_eq!(calculate_annualized_div(&div_hists,"2023"),Ok(7.5));
-        assert_eq!(calculate_annualized_div(&div_hists,"2022"),Ok(0.9));
+        assert_eq!(calculate_annualized_div(&div_hists, "2023"), Ok(7.5));
+        assert_eq!(calculate_annualized_div(&div_hists, "2022"), Ok(0.9));
         Ok(())
     }
-
 }
