@@ -2,15 +2,14 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
-// Get plygon companies list
-// TODO: Test on INTC data
+// TODO: Get polygon companies list (multiple pages)
+// TODO: add ignoring non-complete data
 // TODO: Make NEt income based dividend payout rate
+// TODO: Test on INTC data
 // TODO: Make possiblity to analyze selected company based on polygon.io API
 // TODO: AMCR, TFC i PXD, HSBC
 // TODO: AMCR, HSBC does not work
 // TODO: Make UK list supported
-// selection
-
 // TODO: Change to Result fully in get_polygon_data.
 
 /// Program to help to analyze Dividend companies (Fetch XLSX list from: https://moneyzine.com/investments/dividend-champions/)
@@ -200,11 +199,25 @@ fn main() -> Result<(), &'static str> {
         .collect::<Vec<String>>();
     // For no handpicked companies just make overall analysis
     if companies.len() == 0 {
-
         if args.list_all {
             match data {
                 Some(database) => print_summary(&database, None)?,
-                None => (), // get polygon tickers list
+                None => {
+                    let companies = investments_forecasting::get_polygon_companies_list()?;
+
+                    let mut symbols: Vec<String> = vec![];
+                    let mut names: Vec<String> = vec![];
+
+                    companies.into_iter().for_each(|(s, n)| {
+                        symbols.push(s);
+                        names.push(n);
+                    });
+
+                    let s1 = Series::new("Symbol", &symbols);
+                    let s2 = Series::new("Company", &names);
+                    let df: DataFrame = DataFrame::new(vec![s1, s2]).unwrap();
+                    println!("{df}");
+                }
             }
         } else {
             let data_shortlisted_dy = analyze_div_yield(
@@ -216,8 +229,10 @@ fn main() -> Result<(), &'static str> {
             )?;
             log::info!("Champions Shortlisted by DivY: {}", data_shortlisted_dy);
 
-            let data_shortlisted_dy_dp =
-                analyze_dividend_payout_rate(&data_shortlisted_dy, args.max_div_payout_rate / 100.0)?;
+            let data_shortlisted_dy_dp = analyze_dividend_payout_rate(
+                &data_shortlisted_dy,
+                args.max_div_payout_rate / 100.0,
+            )?;
 
             log::info!(
                 "Champions Shortlisted by DivY and Div Pay-Out: {}",

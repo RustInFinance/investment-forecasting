@@ -9,6 +9,12 @@ Tools to help in investing in dividend companies based on data from [Dividend Ch
 ##### Find a company from Dividend champions that is worth investing for based on 10-11-12 system:
 cargo run --bin divanalysis -- --data data/U.S.DividendChampions-LIVE.xlsx 
 
+##### List all companies which data is available via Polygon.io API
+POLARS_FMT_MAX_ROWS=200 POLYGON_AUTH_KEY=<Your API Key>  cargo run --bin divanalysis --  --list-all
+
+##### List all companies which data is available via DripInvesting XLSX documents
+POLARS_FMT_MAX_ROWS=200 cargo run --bin divanalysis --  --list-all --data data/U.S.DividendChampions-JAN.xlsx
+
 ###### Output:
 ```bash
 shape: (1, 5)

@@ -194,6 +194,45 @@ fn should_try_again<T>(maybe_resp: Result<T, reqwest::Error>, dummy: T) -> (T, b
     }
 }
 
+pub fn get_polygon_companies_list() -> Result<Vec<(String, String)>, &'static str> {
+    let mut query_params = HashMap::new();
+    query_params.insert("active", "true");
+
+    let client = RESTClient::new(None, None);
+    // Get all dividend data we can have
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let mut run = true;
+            let mut resp = polygon_client::types::ReferenceTickersResponse {
+                next_url: None,
+                results: vec![],
+                status: "OK".to_owned(),
+                count: 0,
+                request_id: "".to_owned(),
+            };
+
+            while run {
+                let maybe_resp = client.reference_tickers(&query_params).await;
+                log::info!("RESPONSE(LIST COMPANIES): {maybe_resp:#?}");
+                (resp, run) = should_try_again(maybe_resp, resp);
+            }
+
+            let companies: Vec<(String, String)> = resp
+                .results
+                .iter()
+                .map(|x| {
+                    log::info!("{}: name: {}, type: {}", x.ticker, x.name, x.market);
+                    (x.ticker.clone(), x.name.clone())
+                })
+                .collect();
+
+            return Ok::<Vec<(String, String)>, &'static str>(companies);
+        })
+}
+
 pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, f64), &'static str> {
     let mut query_params = HashMap::new();
     query_params.insert("ticker", company);
@@ -211,7 +250,7 @@ pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, f64), &'static 
 
         while run {
             let maybe_resp = client.reference_stock_dividends(&query_params).await;
-            log::info!("RESPONSE(DIVIDENDS): {resp:#?}");
+            log::info!("RESPONSE(DIVIDENDS): {maybe_resp:#?}");
             (resp,run) = should_try_again(maybe_resp,resp);
         }
 
