@@ -220,14 +220,33 @@ pub fn get_polygon_companies_list() -> Result<Vec<(String, String)>, &'static st
                 (resp, run) = should_try_again(maybe_resp, resp);
             }
 
-            let companies: Vec<(String, String)> = resp
-                .results
-                .iter()
-                .map(|x| {
-                    log::info!("{}: name: {}, type: {}", x.ticker, x.name, x.market);
-                    (x.ticker.clone(), x.name.clone())
-                })
-                .collect();
+            let tickers_results_to_vec = |results :  &Vec<polygon_client::types::ReferenceTickersResponseTickerV3>| {
+                let mut companies: Vec<(String, String)> = 
+                    results
+                    .iter()
+                    .map(|x| {
+                        log::info!("{}: name: {}, type: {}", x.ticker, x.name, x.market);
+                        (x.ticker.clone(), x.name.clone())
+                    })
+                    .collect();
+                companies
+            };
+
+
+            let mut companies: Vec<(String, String)> = tickers_results_to_vec(&resp.results);
+
+            while resp.next_url.clone().is_some() {
+                if let Some(url) = &resp.next_url.clone() {
+                    run = true;
+                    while run {
+                        let maybe_resp = client.fetch_next_page(url).await;
+                        log::info!("RESPONSE NEXT PAGE (LIST COMPANIES): {maybe_resp:#?}");
+                        (resp, run) = should_try_again(maybe_resp, resp);
+                    }
+                    // Here let's attach
+                    companies.append(&mut tickers_results_to_vec(&resp.results));
+                }
+            }
 
             return Ok::<Vec<(String, String)>, &'static str>(companies);
         })

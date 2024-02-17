@@ -2,15 +2,17 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
-// TODO: Get polygon companies list (multiple pages)
-// TODO: add ignoring non-complete data
+// TODO: Get polygon companies list (multiple pages) (next_url + api key reqwest has to be done)
 // TODO: Make NEt income based dividend payout rate
+// TODO: add ignoring non-complete data
+// TODO: Add examples of Polygon to README.md
 // TODO: Test on INTC data
 // TODO: Make possiblity to analyze selected company based on polygon.io API
 // TODO: AMCR, TFC i PXD, HSBC
 // TODO: AMCR, HSBC does not work
 // TODO: Make UK list supported
 // TODO: Change to Result fully in get_polygon_data.
+
 
 /// Program to help to analyze Dividend companies (Fetch XLSX list from: https://moneyzine.com/investments/dividend-champions/)
 #[derive(Parser, Debug)]
