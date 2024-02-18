@@ -274,7 +274,7 @@ fn main() -> Result<(), &'static str> {
                 let s1 = Series::new("Symbol", &symbols);
                 let s2 = Series::new("Curr Div", curr_divs);
                 let s3 = Series::new("Div Yield[%]", divys);
-                let s4 = Series::new("DGR[%]", dgrs);
+                let s4 = Series::new("DGR5G[%]", dgrs);
                 let s5 = Series::new("Payout ratio[%]", payout_ratios);
 
                 let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4, s5]).unwrap();

@@ -267,7 +267,7 @@ pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, f64), &'static 
 
             let dividends_results_to_vec = |results :  &Vec<polygon_client::types::ReferenceStockDividendsResultV3>| {
 
-            let mut div_history : Vec<(String,f64)> = results.iter().map(|x| {
+            let div_history : Vec<(String,f64)> = results.iter().map(|x| {
                 log::info!("{}: ex date: {}, payment date: {}, frequency: {}, div type: {} amount: {}", x.ticker,x.ex_dividend_date,x.pay_date,x.frequency,x.dividend_type,x.cash_amount);
                 (x.pay_date.clone(),x.cash_amount)
             }).collect();
@@ -305,6 +305,17 @@ pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, f64), &'static 
         });
 
         log::info!("Ordered dividends: {div_history:#?}");
+
+        let current_year = Utc::now().year();
+        let num_years_of_interest = 5;
+        let div_history = div_history.into_iter().filter(|x| {
+           let x_date_year = NaiveDate::parse_from_str(&x.0, "%Y-%m-%d").expect( "unable to parse date").year();
+           if (current_year - x_date_year) <= num_years_of_interest {
+               true
+           } else {
+               false
+           }
+        }).collect::<Vec<_>>();
 
         // Curr Dividend  and corressponding date 
         let (curr_div, _curr_div_date) = match div_history.iter().rev().next() {
