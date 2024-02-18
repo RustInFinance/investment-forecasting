@@ -264,6 +264,17 @@ pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, f64), &'static 
             .unwrap()
             .block_on(async {
 
+
+            let dividends_results_to_vec = |results :  &Vec<polygon_client::types::ReferenceStockDividendsResultV3>| {
+
+            let mut div_history : Vec<(String,f64)> = results.iter().map(|x| {
+                log::info!("{}: ex date: {}, payment date: {}, frequency: {}, div type: {} amount: {}", x.ticker,x.ex_dividend_date,x.pay_date,x.frequency,x.dividend_type,x.cash_amount);
+                (x.pay_date.clone(),x.cash_amount)
+            }).collect();
+                div_history
+            };
+
+
         let mut run = true;
         let mut resp = polygon_client::types::ReferenceStockDividendsResponse{next_url : None, results  : vec![], status : "OK".to_owned()};
 
@@ -273,10 +284,19 @@ pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, f64), &'static 
             (resp,run) = should_try_again(maybe_resp,resp);
         }
 
-        let mut div_history : Vec<(String,f64)> = resp.results.iter().map(|x| {
-            log::info!("{}: ex date: {}, payment date: {}, frequency: {}, div type: {} amount: {}", x.ticker,x.ex_dividend_date,x.pay_date,x.frequency,x.dividend_type,x.cash_amount);
-            (x.pay_date.clone(),x.cash_amount)
-        }).collect();
+        let mut div_history: Vec<(String, f64)> = dividends_results_to_vec(&resp.results);
+        while resp.next_url.clone().is_some() {
+            if let Some(url) = &resp.next_url.clone() {
+                run = true;
+                while run {
+                    let maybe_resp = client.fetch_next_page(url).await;
+                    log::info!("RESPONSE NEXT PAGE (DIVIDENDS): {maybe_resp:#?}");
+                    (resp, run) = should_try_again(maybe_resp, resp);
+                }
+                // Here let's attach
+                div_history.append(&mut dividends_results_to_vec(&resp.results));
+            }
+        }
 
         div_history.sort_by(|a,b| {
            let a_date = NaiveDate::parse_from_str(&a.0, "%Y-%m-%d").expect( "unable to parse date");

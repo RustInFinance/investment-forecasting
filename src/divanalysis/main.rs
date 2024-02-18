@@ -2,6 +2,7 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
+// TODO: AMCR, HSBC does not work (Ignore lack of financial data)
 // TODO: Get polygon companies list (multiple pages) (next_url + api key reqwest has to be done)
 // TODO: Make NEt income based dividend payout rate
 // TODO: add ignoring non-complete data
@@ -9,7 +10,6 @@ use polars::prelude::*;
 // TODO: Test on INTC data
 // TODO: Make possiblity to analyze selected company based on polygon.io API
 // TODO: AMCR, TFC i PXD, HSBC
-// TODO: AMCR, HSBC does not work
 // TODO: Make UK list supported
 // TODO: Change to Result fully in get_polygon_data.
 
