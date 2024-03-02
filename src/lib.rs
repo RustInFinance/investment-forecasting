@@ -252,18 +252,7 @@ pub fn get_polygon_companies_list() -> Result<Vec<(String, String)>, &'static st
         })
 }
 
-pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, f64), &'static str> {
-    let mut query_params = HashMap::new();
-    query_params.insert("ticker", company);
-
-    let client = RESTClient::new(None, None);
-    // Get all dividend data we can have
-    tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-
+async fn get_dividiend_data(client : &RESTClient, query_params : &HashMap<&str,&str>) -> Result<(f64,f64, u32, Vec<(String,f64)>),&'static str> {
 
             let dividends_results_to_vec = |results :  &Vec<polygon_client::types::ReferenceStockDividendsResultV3>| {
 
@@ -332,10 +321,28 @@ pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, f64), &'static 
         log::info!("Current Div: {curr_div} {currency}, Frequency: {frequency}, Average DGR(samples: {}): {dgr}",
             div_history.len());
 
+        Ok((*curr_div,dgr,frequency,div_history))
+}
+
+
+pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, f64), &'static str> {
+    let mut query_params = HashMap::new();
+    query_params.insert("ticker", company);
+
+    let client = RESTClient::new(None, None);
+    // Get all dividend data we can have
+    tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+
+        let (curr_div, dgr, frequency, div_history) = get_dividiend_data(&client, &query_params).await?;
+
         let mut close_query_params = HashMap::new();
         close_query_params.insert("adjusted", "true");
 
-        run = true;
+        let mut run = true;
         let mut resp = polygon_client::types::StockEquitiesPreviousCloseResponse{ticker: "".to_owned(),results  : vec![], count : 0, query_count : 0, results_count : 0, status : "OK".to_owned(), adjusted : false};
         while run {
             let maybe_resp = client.stock_equities_previous_close(company,&HashMap::new()).await;
@@ -362,7 +369,7 @@ pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, f64), &'static 
             Err(_) => get_annual_payout_rate(&resp,&div_history)?,
         };
 
-        return Ok::<(f64,f64,f64,f64), &'static str>((*curr_div,divy,dgr,payout_rate));
+        return Ok::<(f64,f64,f64,f64), &'static str>((curr_div,divy,dgr,payout_rate));
     })
 }
 
