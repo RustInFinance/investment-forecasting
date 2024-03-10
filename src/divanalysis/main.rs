@@ -3,15 +3,12 @@ use clap::Parser;
 use polars::prelude::*;
 
 // TODO: num years of grows
-// TODO: AMCR, HSBC does not work (Ignore lack of financial data)
 // TODO: handle companies that do not pay dividends
 // TODO: Get polygon companies list (multiple pages) (next_url + api key reqwest has to be done)
 // TODO: Make NEt income based dividend payout rate
 // TODO: add ignoring non-complete data
 // TODO: Add examples of Polygon to README.md
 // TODO: Test on INTC data
-// TODO: Make possiblity to analyze selected company based on polygon.io API
-// TODO: AMCR, TFC i PXD, HSBC
 // TODO: Make UK list supported
 // TODO: Change to Result fully in get_polygon_data.
 

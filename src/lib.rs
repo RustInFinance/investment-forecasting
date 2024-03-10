@@ -460,7 +460,7 @@ fn get_basic_average_shares(
     company_name: &str,
     fiscal_year: &str,
     fiscal_period: &str,
-) -> Result<f64, &'static str> {
+) -> Result<Option<f64>, &'static str> {
     let basic_average_shares = if let Some(ismap) = &fd.income_statement {
         let basic_average_shares = if ismap.contains_key("basic_average_shares") {
             let basic_average_shares = ismap
@@ -478,9 +478,9 @@ fn get_basic_average_shares(
                 unit,
                 label
             );
-            value
+            Some(value)
         } else {
-            todo!("Implement missing net_cash_flow_continuing");
+            None
         };
         basic_average_shares
     } else {
@@ -558,8 +558,15 @@ fn get_annual_payout_rate(
             r.fiscal_year.as_ref(),
             r.fiscal_period.as_ref(),
         )?;
-        let payout_rate = calculate_payout_ratio(annuallized_div, basic_average_shares, net_value)?;
-        Ok(Some(payout_rate))
+        let payout_rate = match basic_average_shares {
+            Some(num_shares) => Some(calculate_payout_ratio(
+                annuallized_div,
+                num_shares,
+                net_value,
+            )?),
+            None => None,
+        };
+        Ok(payout_rate)
     } else {
         log::info!("No annual financial report found");
         return Ok(None);
@@ -632,7 +639,11 @@ fn get_quaterly_payout_rate(
         res.fiscal_year.as_ref(),
         res.fiscal_period.as_ref(),
     )?;
-    let payout_rate = calculate_payout_ratio(div.1, basic_average_shares, net_value)?;
+
+    let payout_rate = match basic_average_shares {
+        Some(num_shares) => calculate_payout_ratio(div.1, num_shares, net_value)?,
+        None => return Err("Unable to get basic shares value from quaterly financial report"),
+    };
     Ok(payout_rate)
 }
 
