@@ -220,18 +220,17 @@ pub fn get_polygon_companies_list() -> Result<Vec<(String, String)>, &'static st
                 (resp, run) = should_try_again(maybe_resp, resp);
             }
 
-            let tickers_results_to_vec = |results :  &Vec<polygon_client::types::ReferenceTickersResponseTickerV3>| {
-                let mut companies: Vec<(String, String)> = 
-                    results
-                    .iter()
-                    .map(|x| {
-                        log::info!("{}: name: {}, type: {}", x.ticker, x.name, x.market);
-                        (x.ticker.clone(), x.name.clone())
-                    })
-                    .collect();
-                companies
-            };
-
+            let tickers_results_to_vec =
+                |results: &Vec<polygon_client::types::ReferenceTickersResponseTickerV3>| {
+                    let mut companies: Vec<(String, String)> = results
+                        .iter()
+                        .map(|x| {
+                            log::info!("{}: name: {}, type: {}", x.ticker, x.name, x.market);
+                            (x.ticker.clone(), x.name.clone())
+                        })
+                        .collect();
+                    companies
+                };
 
             let mut companies: Vec<(String, String)> = tickers_results_to_vec(&resp.results);
 
@@ -252,125 +251,172 @@ pub fn get_polygon_companies_list() -> Result<Vec<(String, String)>, &'static st
         })
 }
 
-async fn get_dividiend_data(client : &RESTClient, query_params : &HashMap<&str,&str>) -> Result<(f64,f64, u32, Vec<(String,f64)>),&'static str> {
+async fn get_dividiend_data(
+    client: &RESTClient,
+    query_params: &HashMap<&str, &str>,
+) -> Result<(f64, f64, u32, Vec<(String, f64)>), &'static str> {
+    let dividends_results_to_vec =
+        |results: &Vec<polygon_client::types::ReferenceStockDividendsResultV3>| {
+            let div_history: Vec<(String, f64)> = results
+                .iter()
+                .map(|x| {
+                    log::info!(
+                        "{}: ex date: {}, payment date: {}, frequency: {}, div type: {} amount: {}",
+                        x.ticker,
+                        x.ex_dividend_date,
+                        x.pay_date,
+                        x.frequency,
+                        x.dividend_type,
+                        x.cash_amount
+                    );
+                    (x.pay_date.clone(), x.cash_amount)
+                })
+                .collect();
+            div_history
+        };
 
-            let dividends_results_to_vec = |results :  &Vec<polygon_client::types::ReferenceStockDividendsResultV3>| {
+    let mut run = true;
+    let mut resp = polygon_client::types::ReferenceStockDividendsResponse {
+        next_url: None,
+        results: vec![],
+        status: "OK".to_owned(),
+    };
 
-            let div_history : Vec<(String,f64)> = results.iter().map(|x| {
-                log::info!("{}: ex date: {}, payment date: {}, frequency: {}, div type: {} amount: {}", x.ticker,x.ex_dividend_date,x.pay_date,x.frequency,x.dividend_type,x.cash_amount);
-                (x.pay_date.clone(),x.cash_amount)
-            }).collect();
-                div_history
-            };
+    while run {
+        let maybe_resp = client.reference_stock_dividends(&query_params).await;
+        log::info!("RESPONSE(DIVIDENDS): {maybe_resp:#?}");
+        (resp, run) = should_try_again(maybe_resp, resp);
+    }
 
-
-        let mut run = true;
-        let mut resp = polygon_client::types::ReferenceStockDividendsResponse{next_url : None, results  : vec![], status : "OK".to_owned()};
-
-        while run {
-            let maybe_resp = client.reference_stock_dividends(&query_params).await;
-            log::info!("RESPONSE(DIVIDENDS): {maybe_resp:#?}");
-            (resp,run) = should_try_again(maybe_resp,resp);
-        }
-
-        let mut div_history: Vec<(String, f64)> = dividends_results_to_vec(&resp.results);
-        while resp.next_url.clone().is_some() {
-            if let Some(url) = &resp.next_url.clone() {
-                run = true;
-                while run {
-                    let maybe_resp = client.fetch_next_page(url).await;
-                    log::info!("RESPONSE NEXT PAGE (DIVIDENDS): {maybe_resp:#?}");
-                    (resp, run) = should_try_again(maybe_resp, resp);
-                }
-                // Here let's attach
-                div_history.append(&mut dividends_results_to_vec(&resp.results));
+    let mut div_history: Vec<(String, f64)> = dividends_results_to_vec(&resp.results);
+    while resp.next_url.clone().is_some() {
+        if let Some(url) = &resp.next_url.clone() {
+            run = true;
+            while run {
+                let maybe_resp = client.fetch_next_page(url).await;
+                log::info!("RESPONSE NEXT PAGE (DIVIDENDS): {maybe_resp:#?}");
+                (resp, run) = should_try_again(maybe_resp, resp);
             }
+            // Here let's attach
+            div_history.append(&mut dividends_results_to_vec(&resp.results));
         }
+    }
 
-        div_history.sort_by(|a,b| {
-           let a_date = NaiveDate::parse_from_str(&a.0, "%Y-%m-%d").expect( "unable to parse date");
-           let b_date = NaiveDate::parse_from_str(&b.0, "%Y-%m-%d").expect( "unable to parse date"); 
-           a_date.cmp(&b_date)
-        });
+    div_history.sort_by(|a, b| {
+        let a_date = NaiveDate::parse_from_str(&a.0, "%Y-%m-%d").expect("unable to parse date");
+        let b_date = NaiveDate::parse_from_str(&b.0, "%Y-%m-%d").expect("unable to parse date");
+        a_date.cmp(&b_date)
+    });
 
-        log::info!("Ordered dividends: {div_history:#?}");
+    log::info!("Ordered dividends: {div_history:#?}");
 
-        let current_year = Utc::now().year();
-        let num_years_of_interest = 5;
-        let div_history = div_history.into_iter().filter(|x| {
-           let x_date_year = NaiveDate::parse_from_str(&x.0, "%Y-%m-%d").expect( "unable to parse date").year();
-           if (current_year - x_date_year) <= num_years_of_interest {
-               true
-           } else {
-               false
-           }
-        }).collect::<Vec<_>>();
+    let current_year = Utc::now().year();
+    let num_years_of_interest = 5;
+    let div_history = div_history
+        .into_iter()
+        .filter(|x| {
+            let x_date_year = NaiveDate::parse_from_str(&x.0, "%Y-%m-%d")
+                .expect("unable to parse date")
+                .year();
+            if (current_year - x_date_year) <= num_years_of_interest {
+                true
+            } else {
+                false
+            }
+        })
+        .collect::<Vec<_>>();
 
-        // Curr Dividend  and corressponding date 
-        let (curr_div, _curr_div_date) = match div_history.iter().rev().next() {
-            Some((pay_date,cash_amount)) => (cash_amount,NaiveDate::parse_from_str(&pay_date, "%Y-%m-%d").expect("Wrong payout date format")),
-            None => panic!("No dividend Data!"),
-        };
-        let (currency, frequency) = if resp.results.len() > 0 {
-            (resp.results[0].currency.clone(),resp.results[0].frequency)
-        } else {
-            panic!("No dividend Data!");
-        };
+    // Curr Dividend  and corressponding date
+    let (curr_div, curr_div_date) = match div_history.iter().rev().next() {
+        Some((pay_date, cash_amount)) => (
+            cash_amount,
+            NaiveDate::parse_from_str(&pay_date, "%Y-%m-%d").expect("Wrong payout date format"),
+        ),
+        None => panic!("No dividend Data!"),
+    };
+    let (currency, frequency) = if resp.results.len() > 0 {
+        (resp.results[0].currency.clone(), resp.results[0].frequency)
+    } else {
+        panic!("No dividend Data!");
+    };
 
-        let dgr = calculate_dgr(&div_history,frequency)?;
-        log::info!("Current Div: {curr_div} {currency}, Frequency: {frequency}, Average DGR(samples: {}): {dgr}",
+    let dgr = calculate_dgr(&div_history, frequency)?;
+    log::info!("Current Div: {curr_div} {currency}, Paide date: {curr_div_date},  Frequency: {frequency}, Average DGR(samples: {}): {dgr}",
             div_history.len());
 
-        Ok((*curr_div,dgr,frequency,div_history))
+    Ok((*curr_div, dgr, frequency, div_history))
 }
 
-
-pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, f64), &'static str> {
+pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, Option<f64>), &'static str> {
     let mut query_params = HashMap::new();
     query_params.insert("ticker", company);
 
     let client = RESTClient::new(None, None);
     // Get all dividend data we can have
     tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let (curr_div, dgr, frequency, div_history) =
+                get_dividiend_data(&client, &query_params).await?;
 
-        let (curr_div, dgr, frequency, div_history) = get_dividiend_data(&client, &query_params).await?;
+            let mut close_query_params = HashMap::new();
+            close_query_params.insert("adjusted", "true");
 
-        let mut close_query_params = HashMap::new();
-        close_query_params.insert("adjusted", "true");
+            let mut run = true;
+            let mut resp = polygon_client::types::StockEquitiesPreviousCloseResponse {
+                ticker: "".to_owned(),
+                results: vec![],
+                count: 0,
+                query_count: 0,
+                results_count: 0,
+                status: "OK".to_owned(),
+                adjusted: false,
+            };
+            while run {
+                let maybe_resp = client
+                    .stock_equities_previous_close(company, &HashMap::new())
+                    .await;
+                log::info!("RESPONSE(STOCK EQUITIES): {resp:#?}");
+                (resp, run) = should_try_again(maybe_resp, resp);
+            }
 
-        let mut run = true;
-        let mut resp = polygon_client::types::StockEquitiesPreviousCloseResponse{ticker: "".to_owned(),results  : vec![], count : 0, query_count : 0, results_count : 0, status : "OK".to_owned(), adjusted : false};
-        while run {
-            let maybe_resp = client.stock_equities_previous_close(company,&HashMap::new()).await;
-            log::info!("RESPONSE(STOCK EQUITIES): {resp:#?}");
-            (resp,run) = should_try_again(maybe_resp,resp);
-        }
+            let prev_day_share_data = resp
+                .results
+                .iter()
+                .next()
+                .ok_or("Error reading previous date share price")?;
+            let share_price = prev_day_share_data.c;
 
-        let prev_day_share_data = resp.results.iter().next().ok_or("Error reading previous date share price")?;
-        let share_price = prev_day_share_data.c;
+            let divy = calculate_divy(&div_history, share_price, frequency)?;
+            log::info!("Stock price: {share_price}, Div Yield[%]: {divy:.2}");
 
-        let divy = calculate_divy(&div_history,share_price,frequency)?;
-        log::info!("Stock price: {share_price}, Div Yield[%]: {divy:.2}");
+            run = true;
+            let mut resp = polygon_client::types::ReferenceStockFinancialsVXResponse {
+                next_url: None,
+                results: vec![],
+                status: "OK".to_owned(),
+                request_id: None,
+            };
+            while run {
+                let maybe_resp = client.reference_stock_financials_vx(&query_params).await;
+                log::info!("RESPONSE(STOCK FINANCIALS): {resp:#?}");
+                (resp, run) = should_try_again(maybe_resp, resp);
+            }
 
-        run = true;
-        let mut resp = polygon_client::types::ReferenceStockFinancialsVXResponse{next_url : None, results  : vec![], status : "OK".to_owned(), request_id : None};
-        while run {
-            let maybe_resp = client.reference_stock_financials_vx(&query_params).await;
-            log::info!("RESPONSE(STOCK FINANCIALS): {resp:#?}");
-            (resp,run) = should_try_again(maybe_resp,resp);
-        }
+            let payout_rate = match get_quaterly_payout_rate(&resp, &div_history) {
+                Ok(payout_rate) => Some(payout_rate),
+                Err(_) => get_annual_payout_rate(&resp, &div_history)?,
+            };
 
-        let payout_rate = match get_quaterly_payout_rate(&resp,&div_history) {
-            Ok(payout_rate) => payout_rate,
-            Err(_) => get_annual_payout_rate(&resp,&div_history)?,
-        };
-
-        return Ok::<(f64,f64,f64,f64), &'static str>((curr_div,divy,dgr,payout_rate));
-    })
+            return Ok::<(f64, f64, f64, Option<f64>), &'static str>((
+                curr_div,
+                divy,
+                dgr,
+                payout_rate,
+            ));
+        })
 }
 
 fn get_net_cash_flow(
@@ -467,7 +513,7 @@ fn calculate_annualized_div(
 fn get_annual_payout_rate(
     resp: &polygon_client::types::ReferenceStockFinancialsVXResponse,
     div_history: &Vec<(String, f64)>,
-) -> Result<f64, &'static str> {
+) -> Result<Option<f64>, &'static str> {
     // Pick the most recent annual report
     let res = resp
         .results
@@ -485,36 +531,39 @@ fn get_annual_payout_rate(
             )
             .expect("Wrong end date format");
             x_date.cmp(&y_date)
-        })
-        .ok_or("Unable to get most recent annual financial period")?;
+        });
 
-    log::info!(
-        "{:?}: start date: {:?}, end date: {:?}, fiscal_year: {}, timeframe: {} fiscal_period: {}",
-        res.tickers,
-        res.start_date,
-        res.end_date,
-        res.fiscal_year,
-        res.timeframe,
-        res.fiscal_period
-    );
+    if let Some(r) = res {
+        log::info!(
+            "{:?}: start date: {:?}, end date: {:?}, fiscal_year: {}, timeframe: {} fiscal_period: {}",
+            r.tickers,
+            r.start_date,
+            r.end_date,
+            r.fiscal_year,
+            r.timeframe,
+            r.fiscal_period
+        );
+        // Div payout dates must come from chosen fiscal year
+        let annuallized_div = calculate_annualized_div(div_history, &r.fiscal_year)?;
 
-    // Div payout dates must come from chosen fiscal year
-    let annuallized_div = calculate_annualized_div(div_history, &res.fiscal_year)?;
-
-    let net_value = get_net_cash_flow(
-        &res.financials,
-        res.company_name.as_ref(),
-        res.fiscal_year.as_ref(),
-        res.fiscal_period.as_ref(),
-    )?;
-    let basic_average_shares = get_basic_average_shares(
-        &res.financials,
-        res.company_name.as_ref(),
-        res.fiscal_year.as_ref(),
-        res.fiscal_period.as_ref(),
-    )?;
-    let payout_rate = calculate_payout_ratio(annuallized_div, basic_average_shares, net_value)?;
-    Ok(payout_rate)
+        let net_value = get_net_cash_flow(
+            &r.financials,
+            r.company_name.as_ref(),
+            r.fiscal_year.as_ref(),
+            r.fiscal_period.as_ref(),
+        )?;
+        let basic_average_shares = get_basic_average_shares(
+            &r.financials,
+            r.company_name.as_ref(),
+            r.fiscal_year.as_ref(),
+            r.fiscal_period.as_ref(),
+        )?;
+        let payout_rate = calculate_payout_ratio(annuallized_div, basic_average_shares, net_value)?;
+        Ok(Some(payout_rate))
+    } else {
+        log::info!("No annual financial report found");
+        return Ok(None);
+    }
 }
 
 fn get_quaterly_payout_rate(
@@ -628,6 +677,13 @@ fn calculate_dgr(div_history: &Vec<(String, f64)>, frequency: u32) -> Result<f64
     let mut count: u32 = 0;
     let mut prev_val = 0.0;
     let mut annual_div = 0.0;
+
+    // If there are some dividend data but frequency is zero then
+    // comapny seemed to stop paying dividends
+    if frequency == 0 {
+        return Ok(0.0);
+    }
+
     dhiter.for_each(|(_, new_val)| {
         count += 1;
         annual_div += new_val;
@@ -719,6 +775,16 @@ mod tests {
             Ok(-32.06)
         );
 
+        let div_hists: Vec<(String, f64)> = vec![
+            ("2021-12-01".to_owned(), 0.3475),
+            ("2022-03-01".to_owned(), 0.365),
+            ("2022-06-01".to_owned(), 0.365),
+        ];
+
+        assert_eq!(
+            Ok::<f64, &str>(round2(calculate_dgr(&div_hists, 0).unwrap())),
+            Ok(0.0)
+        );
         Ok(())
     }
 

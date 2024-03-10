@@ -2,7 +2,9 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
+// TODO: num years of grows
 // TODO: AMCR, HSBC does not work (Ignore lack of financial data)
+// TODO: handle companies that do not pay dividends
 // TODO: Get polygon companies list (multiple pages) (next_url + api key reqwest has to be done)
 // TODO: Make NEt income based dividend payout rate
 // TODO: add ignoring non-complete data
@@ -12,7 +14,6 @@ use polars::prelude::*;
 // TODO: AMCR, TFC i PXD, HSBC
 // TODO: Make UK list supported
 // TODO: Change to Result fully in get_polygon_data.
-
 
 /// Program to help to analyze Dividend companies (Fetch XLSX list from: https://moneyzine.com/investments/dividend-champions/)
 #[derive(Parser, Debug)]
@@ -258,7 +259,7 @@ fn main() -> Result<(), &'static str> {
                 let mut curr_divs: Vec<f64> = vec![];
                 let mut divys: Vec<f64> = vec![];
                 let mut dgrs: Vec<f64> = vec![];
-                let mut payout_ratios: Vec<f64> = vec![];
+                let mut payout_ratios: Vec<Option<f64>> = vec![];
                 companies.iter().try_for_each(|symbol| {
                     let (curr_div, divy, dgr, payout_ratio) =
                         investments_forecasting::get_polygon_data(&symbol)?;
@@ -272,7 +273,7 @@ fn main() -> Result<(), &'static str> {
                 })?;
 
                 let s1 = Series::new("Symbol", &symbols);
-                let s2 = Series::new("Curr Div", curr_divs);
+                let s2 = Series::new("Recent Div", curr_divs);
                 let s3 = Series::new("Div Yield[%]", divys);
                 let s4 = Series::new("DGR5G[%]", dgrs);
                 let s5 = Series::new("Payout ratio[%]", payout_ratios);
