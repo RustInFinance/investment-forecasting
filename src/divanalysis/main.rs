@@ -2,7 +2,6 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
-//TODO: Fix UT of DGR
 //TODO: Date of last ex day
 // TODO: Fix crash "No dividend data" to be replaced with NULL/None
 // TODO: handle companies that do not pay dividends

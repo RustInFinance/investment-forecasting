@@ -390,7 +390,11 @@ pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, u32, Option<f64
                 .ok_or("Error reading previous date share price")?;
             let share_price = prev_day_share_data.c;
 
-            let divy = calculate_divy(&div_history, share_price, frequency)?;
+            let divy = calculate_divy(
+                &div_history,
+                share_price,
+                Utc::now().year().to_string().as_ref(),
+            )?;
             log::info!("Stock price: {share_price}, Div Yield[%]: {divy:.2}");
 
             let years_of_growth = calculate_consecutive_years_of_growth(
@@ -713,26 +717,42 @@ fn calculate_payout_ratio(div: f64, num_shares: f64, net_value: f64) -> Result<f
 fn calculate_divy(
     div_history: &Vec<(String, f64)>,
     share_price: f64,
-    frequency: u32,
+    current_year: &str,
 ) -> Result<f64, &'static str> {
-    if div_history.len() < frequency as usize {
-        let div_info = div_history
-            .iter()
-            .rev()
-            .next()
-            .ok_or("Unable to get dividend value")?;
-        Ok(div_info.1 / share_price * frequency as f64 * 100.0)
-    } else {
-        let end = div_history.len();
-        let annual_dividends = div_history
-            .get(end - frequency as usize..end)
-            .ok_or("Error getting anuallized dividend")?;
-        let annualized_div = annual_dividends.iter().fold(0.0, |mut acc, num| {
-            acc += num.1;
-            acc
-        });
-        Ok(annualized_div / share_price * 100.0)
-    }
+    let dhiter = div_history.iter();
+
+    let mut average = 0.0;
+    let mut annual_div = 0.0;
+
+    let current_year = current_year
+        .parse::<i32>()
+        .expect("Unable to parse currrent year");
+    let mut annual_div: BTreeMap<i32, f64> = BTreeMap::new();
+
+    div_history.iter().try_for_each(|x| {
+        let year = NaiveDate::parse_from_str(&x.0, "%Y-%m-%d")
+            .map_err(|_| "Error parsing dividend year")?
+            .year();
+        // Skip current year (no full data yet)
+        if year != current_year {
+            let possible_sum = annual_div.get_mut(&year);
+            match possible_sum {
+                Some(s) => *s += x.1,
+                None => {
+                    annual_div.insert(year, x.1);
+                    ()
+                }
+            }
+        }
+        Ok::<(), &str>(())
+    })?;
+
+    let mut from_newer_to_older = annual_div.iter().rev();
+    let annual_div = from_newer_to_older
+        .next()
+        .ok_or("Error: unable to get devidend")?.1;
+
+    Ok(annual_div / share_price * 100.0)
 }
 
 /// DGR On quaterly basis calculate
@@ -787,13 +807,29 @@ fn calculate_dgr(
         .ok_or("Error: unable to get devidend")?;
 
     log::info!("DGR: Annual dividend year: {next_year} annual_div: {next_year_div}");
+    let mut num_averages = 0;
     for (year, sum) in from_newer_to_older {
         log::info!("DGR: Annual dividend year: {year} annual_div: {sum}");
-        average += (next_year_div / sum - 1.0) * 100.0;
+        if *sum > 0.0 {
+            average += (next_year_div / sum - 1.0) * 100.0;
+        } else {
+            // If next year dividend is positive and previous one is zero then
+            // increase was by 100%
+            if *next_year_div > 0.0 {
+                average += 100.0;
+            } else {
+                average += 0.0;
+            }
+        }
         next_year_div = sum;
+        num_averages += 1;
     }
 
-    Ok(average)
+    if num_averages == 0 {
+        Ok(0.0)
+    } else {
+        Ok(average / num_averages as f64)
+    }
 }
 
 #[cfg(test)]
@@ -812,7 +848,7 @@ mod tests {
             ("2023-07-01".to_owned(), 0.5),
             ("2023-11-01".to_owned(), 0.5),
         ];
-        assert_eq!(calculate_divy(&div_hists, 100.0, 4), Ok(2.0));
+        assert_eq!(calculate_divy(&div_hists, 100.0, "2024"), Ok(2.0));
 
         let div_hists: Vec<(String, f64)> = vec![
             ("2023-01-01".to_owned(), 1.0),
@@ -820,12 +856,12 @@ mod tests {
             ("2023-07-01".to_owned(), 2.0),
             ("2023-11-01".to_owned(), 4.0),
         ];
-        assert_eq!(calculate_divy(&div_hists, 100.0, 4), Ok(8.0));
+        assert_eq!(calculate_divy(&div_hists, 100.0, "2024"), Ok(8.0));
         Ok(())
     }
 
     #[test]
-    fn test_calulate_dgr() -> Result<(), String> {
+    fn test_calculate_dgr() -> Result<(), String> {
         let div_hists: Vec<(String, f64)> = vec![
             ("2023-01-01".to_owned(), 0.5),
             ("2023-04-01".to_owned(), 0.5),
@@ -878,6 +914,10 @@ mod tests {
             Ok(-49.32)
         );
 
+        // 0.3475
+        // 2.0*0.365 = 0.73
+        // 0.0
+        // DGR = (0.0 -1.0)*100.0 + (0.73/0.3475 - 1.0)*100.0 = 10.071942 / 2.0 = 5.04
         let div_hists: Vec<(String, f64)> = vec![
             ("2021-12-01".to_owned(), 0.3475),
             ("2022-03-01".to_owned(), 0.365),
@@ -886,7 +926,7 @@ mod tests {
 
         assert_eq!(
             Ok::<f64, &str>(round2(calculate_dgr(&div_hists, "2024").unwrap())),
-            Ok(0.0)
+            Ok(5.04)
         );
 
         // ABEV as of 28th of March 2024
@@ -954,7 +994,7 @@ mod tests {
 
         assert_eq!(
             Ok::<f64, &str>(round2(calculate_dgr(&div_hists, "2024").unwrap())),
-            Ok(0.0)
+            Ok(17.58)
         );
 
         Ok(())
