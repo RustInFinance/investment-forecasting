@@ -5,6 +5,7 @@ use std::fmt;
 use chrono::prelude::*;
 
 use polygon_client::rest::RESTClient;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 pub fn load_list<R>(excel: &mut Xlsx<R>, category: &str) -> Result<DataFrame, &'static str>
@@ -510,6 +511,53 @@ fn calculate_annualized_div(
     Ok(annuallized_div)
 }
 
+/// Calculate consecutive years of growing dividend, not including current year
+fn calculate_consecutive_years_of_growth(
+    div_history: &Vec<(String, f64)>,
+    current_year: &str,
+) -> Result<u32, &'static str> {
+    let current_year = current_year
+        .parse::<i32>()
+        .expect("Unable to parse currrent year");
+    let mut annual_div: BTreeMap<i32, f64> = BTreeMap::new();
+
+    div_history.iter().try_for_each(|x| {
+        let year = NaiveDate::parse_from_str(&x.0, "%Y-%m-%d")
+            .map_err(|_| "Error parsing dividend year")?
+            .year();
+        // Skip current year (no full data yet)
+        if year != current_year {
+            let possible_sum = annual_div.get_mut(&year);
+            match possible_sum {
+                Some(s) => *s += x.1,
+                None => {
+                    annual_div.insert(year, x.1);
+                    ()
+                }
+            }
+        }
+        Ok::<(), &str>(())
+    })?;
+
+    let mut num_consecutive_years = 0;
+    let mut from_newer_to_older = annual_div.iter().rev();
+    let mut next_year_div = from_newer_to_older
+        .next()
+        .ok_or("Error: unable to get devidend")?
+        .1;
+    'petla: for (_, sum) in from_newer_to_older {
+        if sum < next_year_div {
+            num_consecutive_years += 1;
+            next_year_div = sum;
+        } else {
+            num_consecutive_years = 0;
+            break 'petla;
+        }
+    }
+
+    Ok(num_consecutive_years)
+}
+
 fn get_annual_payout_rate(
     resp: &polygon_client::types::ReferenceStockFinancialsVXResponse,
     div_history: &Vec<(String, f64)>,
@@ -820,6 +868,58 @@ mod tests {
 
         assert_eq!(calculate_annualized_div(&div_hists, "2023"), Ok(7.5));
         assert_eq!(calculate_annualized_div(&div_hists, "2022"), Ok(0.9));
+        Ok(())
+    }
+
+    #[test]
+    fn test_calculate_consecutive_years_of_growth() -> Result<(), String> {
+        let div_hists: Vec<(String, f64)> = vec![
+            ("2023-01-01".to_owned(), 0.5),
+            ("2023-04-01".to_owned(), 1.0),
+            ("2023-07-01".to_owned(), 2.0),
+            ("2023-11-01".to_owned(), 4.0),
+            ("2022-04-01".to_owned(), 0.3),
+            ("2022-07-01".to_owned(), 0.3),
+            ("2022-11-01".to_owned(), 0.2),
+            ("2022-01-01".to_owned(), 0.1),
+        ];
+        assert_eq!(
+            calculate_consecutive_years_of_growth(&div_hists, "2024"),
+            Ok(1)
+        );
+
+        let div_hists: Vec<(String, f64)> = vec![
+            ("2024-01-01".to_owned(), 0.5),
+            ("2023-01-01".to_owned(), 0.5),
+            ("2023-04-01".to_owned(), 1.0),
+            ("2023-07-01".to_owned(), 2.0),
+            ("2023-11-01".to_owned(), 4.0),
+            ("2022-04-01".to_owned(), 0.3),
+            ("2022-07-01".to_owned(), 0.3),
+            ("2022-11-01".to_owned(), 0.2),
+            ("2022-01-01".to_owned(), 0.1),
+        ];
+        assert_eq!(
+            calculate_consecutive_years_of_growth(&div_hists, "2024"),
+            Ok(1)
+        );
+
+        let div_hists: Vec<(String, f64)> = vec![
+            ("2024-01-01".to_owned(), 0.5),
+            ("2023-01-01".to_owned(), 0.5),
+            ("2023-04-01".to_owned(), 1.0),
+            ("2023-07-01".to_owned(), 2.0),
+            ("2023-11-01".to_owned(), 3.0),
+            ("2022-04-01".to_owned(), 3.3),
+            ("2022-07-01".to_owned(), 3.3),
+            ("2022-11-01".to_owned(), 0.2),
+            ("2022-01-01".to_owned(), 0.1),
+        ];
+        assert_eq!(
+            calculate_consecutive_years_of_growth(&div_hists, "2024"),
+            Ok(0)
+        );
+
         Ok(())
     }
 }
