@@ -342,7 +342,7 @@ async fn get_dividiend_data(
     };
 
     let dgr = calculate_dgr(&div_history, Utc::now().year().to_string().as_ref())?;
-    log::info!("Current Div: {curr_div} {currency}, Paide date: {curr_div_date},  Frequency: {frequency}, Average DGR(samples: {}): {dgr}",
+    log::info!("Current Div: {curr_div} {currency}, Paid date: {curr_div_date},  Frequency: {frequency}, Average DGR(samples: {}): {dgr}",
             div_history.len());
 
     Ok((*curr_div, dgr, frequency, div_history))
