@@ -348,7 +348,7 @@ async fn get_dividiend_data(
     Ok((*curr_div, dgr, frequency, div_history))
 }
 
-pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, Option<f64>), &'static str> {
+pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, u32, Option<f64>), &'static str> {
     let mut query_params = HashMap::new();
     query_params.insert("ticker", company);
 
@@ -393,6 +393,12 @@ pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, Option<f64>), &
             let divy = calculate_divy(&div_history, share_price, frequency)?;
             log::info!("Stock price: {share_price}, Div Yield[%]: {divy:.2}");
 
+            let years_of_growth = calculate_consecutive_years_of_growth(
+                &div_history,
+                Utc::now().year().to_string().as_ref(),
+            )?;
+            log::info!("Consecutive years of dividend growth: {years_of_growth}");
+
             run = true;
             let mut resp = polygon_client::types::ReferenceStockFinancialsVXResponse {
                 next_url: None,
@@ -411,10 +417,11 @@ pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, Option<f64>), &
                 Err(_) => get_annual_payout_rate(&resp, &div_history)?,
             };
 
-            return Ok::<(f64, f64, f64, Option<f64>), &'static str>((
+            return Ok::<(f64, f64, f64, u32, Option<f64>), &'static str>((
                 curr_div,
                 divy,
                 dgr,
+                years_of_growth,
                 payout_rate,
             ));
         })
@@ -541,16 +548,16 @@ fn calculate_consecutive_years_of_growth(
 
     let mut num_consecutive_years = 0;
     let mut from_newer_to_older = annual_div.iter().rev();
-    let mut next_year_div = from_newer_to_older
+    let (next_year, mut next_year_div) = from_newer_to_older
         .next()
-        .ok_or("Error: unable to get devidend")?
-        .1;
-    'petla: for (_, sum) in from_newer_to_older {
+        .ok_or("Error: unable to get devidend")?;
+    log::info!("Annual dividend year: {next_year} annual_div: {next_year_div}");
+    'petla: for (year, sum) in from_newer_to_older {
+        log::info!("Annual dividend year: {year} annual_div: {sum}");
         if sum < next_year_div {
             num_consecutive_years += 1;
             next_year_div = sum;
         } else {
-            num_consecutive_years = 0;
             break 'petla;
         }
     }
@@ -918,6 +925,26 @@ mod tests {
         assert_eq!(
             calculate_consecutive_years_of_growth(&div_hists, "2024"),
             Ok(0)
+        );
+
+        let div_hists: Vec<(String, f64)> = vec![
+            ("2024-01-01".to_owned(), 0.5),
+            ("2023-01-01".to_owned(), 2.5),
+            ("2023-04-01".to_owned(), 1.0),
+            ("2023-07-01".to_owned(), 2.0),
+            ("2023-11-01".to_owned(), 3.0),
+            ("2022-04-01".to_owned(), 2.3),
+            ("2022-07-01".to_owned(), 3.3),
+            ("2022-11-01".to_owned(), 0.2),
+            ("2022-01-01".to_owned(), 0.1),
+            ("2021-04-01".to_owned(), 3.3),
+            ("2021-07-01".to_owned(), 3.3),
+            ("2021-11-01".to_owned(), 0.2),
+            ("2021-01-01".to_owned(), 0.1),
+        ];
+        assert_eq!(
+            calculate_consecutive_years_of_growth(&div_hists, "2024"),
+            Ok(1)
         );
 
         Ok(())
