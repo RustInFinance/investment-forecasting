@@ -438,10 +438,10 @@ fn get_net_cash_flow(
     fiscal_period: &str,
 ) -> Result<f64, &'static str> {
     let net_value = if let Some(ismap) = &fd.cash_flow_statement {
-        let net_value = if ismap.contains_key("net_cash_flow_continuing") {
+        let net_value = if ismap.contains_key("net_cash_flow_from_operating_activities") {
             let net_cash_flow = ismap
-                .get("net_cash_flow_continuing")
-                .expect("Error getting net_cash_flow_continuing");
+                .get("net_cash_flow_from_operating_activities")
+                .expect("Error getting net_cash_flow_from_operating_activities");
             let net_value = net_cash_flow.value.clone().unwrap();
             let net_unit = net_cash_flow.unit.clone().unwrap();
             let net_label = net_cash_flow.label.clone().unwrap();
@@ -458,7 +458,7 @@ fn get_net_cash_flow(
             // curr_div * num_shares  / net_value
             net_value
         } else {
-            return Err("Missing net_cash_flow_continuing");
+            return Err("Missing net_cash_flow_from_operating_activities");
         };
         net_value
     } else {
@@ -750,7 +750,8 @@ fn calculate_divy(
     let mut from_newer_to_older = annual_div.iter().rev();
     let annual_div = from_newer_to_older
         .next()
-        .ok_or("Error: unable to get devidend")?.1;
+        .ok_or("Error: unable to get devidend")?
+        .1;
 
     Ok(annual_div / share_price * 100.0)
 }
