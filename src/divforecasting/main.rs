@@ -12,7 +12,7 @@ struct Args {
     data: Option<String>,
 
     /// Symbol names of companies from dividend list as provided with "data" argument
-    #[arg(long, requires = "data", default_values_t = &[] )]
+    #[arg(long, default_values_t = &[] )]
     company: Vec<String>,
 
     /// Custom (not taken from the list) company name
@@ -267,16 +267,6 @@ fn forecast_dividend_stocks(
             &[gnuplot::LabelOption::<&str>::Font("Arial", 12.0)],
         );
 
-    let all = match data {
-        Some(database) => {
-            let mut excel: Xlsx<_> = open_workbook(database)
-                .map_err(|_| "Error: opening XLSX")
-                .expect("Could not open Dividends data file");
-            investments_forecasting::load_list(&mut excel, "All").expect("Unable to load Data")
-        }
-        None => DataFrame::default(),
-    };
-
     companies.iter().enumerate().for_each(|(i, x)| {
 
         match x {
@@ -310,23 +300,41 @@ fn forecast_dividend_stocks(
             Target::symbol(name) => {
                 let name_str : &str = &name;
                 let company = Series::new("", vec![name_str]);
-                let mask = all.column("Symbol").unwrap().equal(&company).unwrap();
-                let company_data = all.filter(&mask).expect("Unable to filter loaded data");
 
-                let price_series = company_data.column("Price").unwrap();
-                let price = price_series.get(0).expect("Unable to get Price of selected company");
 
-                let dy_series = company_data.column("Div Yield").unwrap();
-                let dy = dy_series.get(0).expect("Unable to get Div Yield of selected company");
+                let (share_price, dy, dyg) = match data.clone() {
+                    Some(database) => {
 
-                let dyg_series = company_data.column("DGR 5Y").unwrap();
-                let dyg = dyg_series.get(0).expect("Unable to get DGR 5Y of selected company");
+                        let mut excel: Xlsx<_> = open_workbook(database)
+                            .map_err(|_| "Error: opening XLSX")
+                            .expect("Could not open Dividends data file");
+                        let all = investments_forecasting::load_list(&mut excel, "All").expect("Unable to load Data");
 
-                // Dividend list has percentages of values so we need to convert them from e.g. 1%
-                // to 0.01 etc.
-                let (price,dy,dyg) = match (price,dy,dyg) {
-                    (AnyValue::Float64(valp),AnyValue::Float64(vald),AnyValue::Float64(valg)) => (valp,vald/100.0,valg/100.0),
-                    _ => panic!("Unable to get price value"),
+                        let mask = all.column("Symbol").unwrap().equal(&company).unwrap();
+                        let company_data = all.filter(&mask).expect("Unable to filter loaded data");
+
+                        let price_series = company_data.column("Price").unwrap();
+                        let price = price_series.get(0).expect("Unable to get Price of selected company");
+
+                        let dy_series = company_data.column("Div Yield").unwrap();
+                        let dy = dy_series.get(0).expect("Unable to get Div Yield of selected company");
+
+                        let dyg_series = company_data.column("DGR 5Y").unwrap();
+                        let dyg = dyg_series.get(0).expect("Unable to get DGR 5Y of selected company");
+
+                        // Dividend list has percentages of values so we need to convert them from e.g. 1%
+                        // to 0.01 etc.
+                        let (price,dy,dyg) = match (price,dy,dyg) {
+                            (AnyValue::Float64(valp),AnyValue::Float64(vald),AnyValue::Float64(valg)) => (valp,vald/100.0,valg/100.0),
+                            _ => panic!("Unable to get price value"),
+                        };
+                        (price, dy, dyg)
+                    }
+                    None => {
+                        let (share_price, _, divy, dgr, _, _) =
+                            investments_forecasting::get_polygon_data(&name).expect("Error: unable to get Data from polygon IO for forecasting");
+                        (share_price, divy, dgr)
+                    },
                 };
 
                 // Get Dividend prediction
@@ -334,7 +342,7 @@ fn forecast_dividend_stocks(
                     base_capital,
                     dy,
                     dyg,
-                    price,
+                    share_price,
                     shares_price_growth_rate,
                     tax_rate,
                     &time_data,
@@ -346,7 +354,7 @@ fn forecast_dividend_stocks(
                             max_y = *x;
                         }
                         format!(
-                        "{name}(DIV Yield[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2}) (Capital in Stock[$]: {:.2}, Payout[$]: {:.2}, Total Dividends Gains[$]: {:.2} )",dy*100.0,dyg*100.0,price, capital, final_payout,x
+                        "{name}(DIV Yield[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2}) (Capital in Stock[$]: {:.2}, Payout[$]: {:.2}, Total Dividends Gains[$]: {:.2} )",dy*100.0,dyg*100.0,share_price, capital, final_payout,x
                     )},
                     None => panic!("Error: No dividend data to plot!"),
                 };
