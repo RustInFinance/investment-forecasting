@@ -311,6 +311,12 @@ async fn get_dividiend_data(
 
     log::info!("Ordered dividends: {div_history:#?}");
 
+    let years_of_growth = calculate_consecutive_years_of_growth(
+        &div_history,
+        Utc::now().year().to_string().as_ref(),
+    )?;
+    log::info!("Consecutive years of dividend growth: {years_of_growth}");
+
     let current_year = Utc::now().year();
     let num_years_of_interest = 5;
     let div_history = div_history
@@ -345,7 +351,7 @@ async fn get_dividiend_data(
     log::info!("Current Div: {curr_div} {currency}, Paid date: {curr_div_date},  Frequency: {frequency}, Average DGR(samples: {}): {dgr}",
             div_history.len());
 
-    Ok((*curr_div, dgr, frequency, div_history))
+    Ok((*curr_div, dgr, years_of_growth, div_history))
 }
 
 pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, u32, Option<f64>), &'static str> {
@@ -359,7 +365,7 @@ pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, u32, Option<f64
         .build()
         .unwrap()
         .block_on(async {
-            let (curr_div, dgr, frequency, div_history) =
+            let (curr_div, dgr, years_of_growth, div_history) =
                 get_dividiend_data(&client, &query_params).await?;
 
             let mut close_query_params = HashMap::new();
@@ -396,12 +402,6 @@ pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, u32, Option<f64
                 Utc::now().year().to_string().as_ref(),
             )?;
             log::info!("Stock price: {share_price}, Div Yield[%]: {divy:.2}");
-
-            let years_of_growth = calculate_consecutive_years_of_growth(
-                &div_history,
-                Utc::now().year().to_string().as_ref(),
-            )?;
-            log::info!("Consecutive years of dividend growth: {years_of_growth}");
 
             run = true;
             let mut resp = polygon_client::types::ReferenceStockFinancialsVXResponse {
