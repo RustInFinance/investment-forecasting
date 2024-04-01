@@ -2,14 +2,13 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
+// TODO: Add current share price
 // TODO: Add "sector" of company e.g. technology, food, nutrition etc.
 // TODO: Date of last ex day
 // TODO: Fix crash "No dividend data" to be replaced with NULL/None
 // TODO: handle companies that do not pay dividends
 // TODO: Get polygon companies list (multiple pages) (next_url + api key reqwest has to be done)
-// TODO: Make NEt income based dividend payout rate
 // TODO: add ignoring non-complete data
-// TODO: Add examples of Polygon to README.md
 // TODO: Make UK list supported
 // TODO: Change to Result fully in get_polygon_data.
 
@@ -254,15 +253,17 @@ fn main() -> Result<(), &'static str> {
             }
             None => {
                 let mut symbols: Vec<&str> = vec![];
+                let mut share_prices: Vec<f64> = vec![];
                 let mut curr_divs: Vec<f64> = vec![];
                 let mut divys: Vec<f64> = vec![];
                 let mut dgrs: Vec<f64> = vec![];
                 let mut years_growth: Vec<u32> = vec![];
                 let mut payout_ratios: Vec<Option<f64>> = vec![];
                 companies.iter().try_for_each(|symbol| {
-                    let (curr_div, divy, dgr, years_of_growth, payout_ratio) =
+                    let (share_price, curr_div, divy, dgr, years_of_growth, payout_ratio) =
                         investments_forecasting::get_polygon_data(&symbol)?;
 
+                    share_prices.push(share_price);
                     curr_divs.push(curr_div);
                     divys.push(divy);
                     dgrs.push(dgr);
@@ -273,13 +274,14 @@ fn main() -> Result<(), &'static str> {
                 })?;
 
                 let s1 = Series::new("Symbol", &symbols);
-                let s2 = Series::new("Recent Div", curr_divs);
-                let s3 = Series::new("Div Yield[%]", divys);
-                let s4 = Series::new("DGR5G[%]", dgrs);
-                let s5 = Series::new("Years of consecutive Div growth", years_growth);
-                let s6 = Series::new("Payout ratio[%]", payout_ratios);
+                let s2 = Series::new("Share Price", share_prices);
+                let s3 = Series::new("Recent Div", curr_divs);
+                let s4 = Series::new("Div Yield[%]", divys);
+                let s5 = Series::new("DGR5G[%]", dgrs);
+                let s6 = Series::new("Years of consecutive Div growth", years_growth);
+                let s7 = Series::new("Payout ratio[%]", payout_ratios);
 
-                let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4, s5, s6]).unwrap();
+                let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4, s5, s6, s7]).unwrap();
                 println!("{df}");
             }
         }

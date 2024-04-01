@@ -354,7 +354,9 @@ async fn get_dividiend_data(
     Ok((*curr_div, dgr, years_of_growth, div_history))
 }
 
-pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, u32, Option<f64>), &'static str> {
+pub fn get_polygon_data(
+    company: &str,
+) -> Result<(f64, f64, f64, f64, u32, Option<f64>), &'static str> {
     let mut query_params = HashMap::new();
     query_params.insert("ticker", company);
 
@@ -421,7 +423,8 @@ pub fn get_polygon_data(company: &str) -> Result<(f64, f64, f64, u32, Option<f64
                 Err(_) => get_annual_payout_rate(&resp, &div_history)?,
             };
 
-            return Ok::<(f64, f64, f64, u32, Option<f64>), &'static str>((
+            return Ok::<(f64, f64, f64, f64, u32, Option<f64>), &'static str>((
+                share_price,
                 curr_div,
                 divy,
                 dgr,
