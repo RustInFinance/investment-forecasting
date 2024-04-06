@@ -252,6 +252,26 @@ pub fn get_polygon_companies_list() -> Result<Vec<(String, String)>, &'static st
         })
 }
 
+async fn get_company_details(client: &RESTClient, company : &str) -> Result<String, &'static str>
+{
+            let mut resp = polygon_client::types::ReferenceTickerDetailsResponse {
+                request_id: "".to_owned(),
+                results: Default::default(),
+                status: "OK".to_owned(),
+            };
+
+            let mut run = true;
+            while run {
+                let maybe_resp = client.reference_ticker_details("INTC",&HashMap::new()).await;
+                log::info!("RESPONSE(COMPANY DETAILS): {maybe_resp:#?}");
+                (resp, run) = should_try_again(maybe_resp, resp);
+            }
+    
+
+    Ok(resp.results.sic_description)
+}
+
+
 async fn get_dividiend_data(
     client: &RESTClient,
     query_params: &HashMap<&str, &str>,
@@ -356,7 +376,7 @@ async fn get_dividiend_data(
 
 pub fn get_polygon_data(
     company: &str,
-) -> Result<(f64, f64, f64, f64, u32, Option<f64>), &'static str> {
+) -> Result<(f64, f64, f64, f64, u32, Option<f64>, String), &'static str> {
     let mut query_params = HashMap::new();
     query_params.insert("ticker", company);
 
@@ -367,8 +387,11 @@ pub fn get_polygon_data(
         .build()
         .unwrap()
         .block_on(async {
+
             let (curr_div, dgr, years_of_growth, div_history) =
                 get_dividiend_data(&client, &query_params).await?;
+
+            let sector_desc = get_company_details(&client, company).await?;
 
             let mut close_query_params = HashMap::new();
             close_query_params.insert("adjusted", "true");
@@ -423,13 +446,14 @@ pub fn get_polygon_data(
                 Err(_) => get_annual_payout_rate(&resp, &div_history)?,
             };
 
-            return Ok::<(f64, f64, f64, f64, u32, Option<f64>), &'static str>((
+            return Ok::<(f64, f64, f64, f64, u32, Option<f64>, String), &'static str>((
                 share_price,
                 curr_div,
                 divy,
                 dgr,
                 years_of_growth,
                 payout_rate,
+                sector_desc,
             ));
         })
 }

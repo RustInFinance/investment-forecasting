@@ -2,8 +2,7 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
-// TODO: Add current share price
-// TODO: Add "sector" of company e.g. technology, food, nutrition etc.
+// TODO: Add "sector" of company e.g. technology, food, nutrition etc.()debggung test_rust_polygon
 // TODO: Date of last ex day
 // TODO: Fix crash "No dividend data" to be replaced with NULL/None
 // TODO: handle companies that do not pay dividends
@@ -259,8 +258,9 @@ fn main() -> Result<(), &'static str> {
                 let mut dgrs: Vec<f64> = vec![];
                 let mut years_growth: Vec<u32> = vec![];
                 let mut payout_ratios: Vec<Option<f64>> = vec![];
+                let mut sectors: Vec<String> = vec![];
                 companies.iter().try_for_each(|symbol| {
-                    let (share_price, curr_div, divy, dgr, years_of_growth, payout_ratio) =
+                    let (share_price, curr_div, divy, dgr, years_of_growth, payout_ratio, sector_desc) =
                         investments_forecasting::get_polygon_data(&symbol)?;
 
                     share_prices.push(share_price);
@@ -270,6 +270,7 @@ fn main() -> Result<(), &'static str> {
                     years_growth.push(years_of_growth);
                     payout_ratios.push(payout_ratio);
                     symbols.push(&symbol);
+                    sectors.push(sector_desc);
                     Ok::<(), &'static str>(())
                 })?;
 
@@ -280,8 +281,9 @@ fn main() -> Result<(), &'static str> {
                 let s5 = Series::new("DGR5G[%]", dgrs);
                 let s6 = Series::new("Years of consecutive Div growth", years_growth);
                 let s7 = Series::new("Payout ratio[%]", payout_ratios);
+                let s8 = Series::new("Industry Desc", sectors);
 
-                let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4, s5, s6, s7]).unwrap();
+                let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4, s5, s6, s7, s8]).unwrap();
                 println!("{df}");
             }
         }
