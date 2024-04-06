@@ -260,8 +260,15 @@ fn main() -> Result<(), &'static str> {
                 let mut payout_ratios: Vec<Option<f64>> = vec![];
                 let mut sectors: Vec<String> = vec![];
                 companies.iter().try_for_each(|symbol| {
-                    let (share_price, curr_div, divy, dgr, years_of_growth, payout_ratio, sector_desc) =
-                        investments_forecasting::get_polygon_data(&symbol)?;
+                    let (
+                        share_price,
+                        curr_div,
+                        divy,
+                        dgr,
+                        years_of_growth,
+                        payout_ratio,
+                        sector_desc,
+                    ) = investments_forecasting::get_polygon_data(&symbol)?;
 
                     share_prices.push(share_price);
                     curr_divs.push(curr_div);
