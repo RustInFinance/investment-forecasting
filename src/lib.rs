@@ -252,7 +252,10 @@ pub fn get_polygon_companies_list() -> Result<Vec<(String, String)>, &'static st
         })
 }
 
-async fn get_company_details(client: &RESTClient, company: &str) -> Result<String, &'static str> {
+async fn get_company_details(
+    client: &RESTClient,
+    company: &str,
+) -> Result<Option<String>, &'static str> {
     let mut resp = polygon_client::types::ReferenceTickerDetailsResponse {
         request_id: "".to_owned(),
         results: Default::default(),
@@ -375,7 +378,7 @@ async fn get_dividiend_data(
 
 pub fn get_polygon_data(
     company: &str,
-) -> Result<(f64, f64, f64, f64, u32, Option<f64>, String), &'static str> {
+) -> Result<(f64, f64, f64, f64, u32, Option<f64>, Option<String>), &'static str> {
     let mut query_params = HashMap::new();
     query_params.insert("ticker", company);
 
@@ -441,7 +444,7 @@ pub fn get_polygon_data(
 
             let payout_rate = get_annual_payout_rate(&resp, &div_history)?;
 
-            return Ok::<(f64, f64, f64, f64, u32, Option<f64>, String), &'static str>((
+            return Ok::<(f64, f64, f64, f64, u32, Option<f64>, Option<String>), &'static str>((
                 share_price,
                 curr_div,
                 divy,

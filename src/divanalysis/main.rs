@@ -258,7 +258,7 @@ fn main() -> Result<(), &'static str> {
                 let mut dgrs: Vec<f64> = vec![];
                 let mut years_growth: Vec<u32> = vec![];
                 let mut payout_ratios: Vec<Option<f64>> = vec![];
-                let mut sectors: Vec<String> = vec![];
+                let mut sectors: Vec<Option<String>> = vec![];
                 companies.iter().try_for_each(|symbol| {
                     let (
                         share_price,
