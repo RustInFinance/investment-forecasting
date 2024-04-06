@@ -262,7 +262,7 @@ async fn get_company_details(client: &RESTClient, company: &str) -> Result<Strin
     let mut run = true;
     while run {
         let maybe_resp = client
-            .reference_ticker_details("INTC", &HashMap::new())
+            .reference_ticker_details(company, &HashMap::new())
             .await;
         log::info!("RESPONSE(COMPANY DETAILS): {maybe_resp:#?}");
         (resp, run) = should_try_again(maybe_resp, resp);
