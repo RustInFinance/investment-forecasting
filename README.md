@@ -12,20 +12,19 @@ cargo run --bin divanalysis -- --data data/U.S.DividendChampions-LIVE.xlsx
 ##### List all companies which data is available via Polygon.io API
 POLARS_FMT_MAX_ROWS=200 POLYGON_AUTH_KEY=<Your API Key>  cargo run --bin divanalysis --  --list-all
 
-##### Get data according to 10-11-12 system for TFC (Truist Financial Corporation):
- POLYGON_AUTH_KEY=<Your API key> cargo run --bin divanalysis -- --company TFC
+##### Get data according to 10-11-12 system for ABR (Arbor Realty Trust):
+POLARS_FMT_MAX_COLS=9  POLYGON_AUTH_KEY=EdGv_cGn2OB6hQ8bpoFpSZLBYsez7Uud  cargo run --bin divanalysis -- --company ABR
 
 ###### Output:
 ```bash
-shape: (1, 6)
-┌────────┬────────────┬──────────────┬───────────┬──────────────────────┬─────────────────┐
-│ Symbol ┆ Recent Div ┆ Div Yield[%] ┆ DGR5G[%]  ┆ Years of consecutive ┆ Payout ratio[%] │
-│ ---    ┆ ---        ┆ ---          ┆ ---       ┆ Div growth           ┆ ---             │
-│ str    ┆ f64        ┆ f64          ┆ f64       ┆ ---                  ┆ f64             │
-│        ┆            ┆              ┆           ┆ u32                  ┆                 │
-╞════════╪════════════╪══════════════╪═══════════╪══════════════════════╪═════════════════╡
-│ TFC    ┆ 0.52       ┆ 6.670087     ┆ 11.530843 ┆ 9                    ┆ 0.012825        │
-└────────┴────────────┴──────────────┴───────────┴──────────────────────┴─────────────────┘
+shape: (1, 9)
+┌────────┬─────────────┬────────────┬──────────────────┬──────────────┬───────────┬─────────────────────────────────┬─────────────────┬───────────────────────────────┐
+│ Symbol ┆ Share Price ┆ Recent Div ┆ Annual Frequency ┆ Div Yield[%] ┆ DGR5G[%]  ┆ Years of consecutive Div growth ┆ Payout ratio[%] ┆ Industry Desc                 │
+│ ---    ┆ ---         ┆ ---        ┆ ---              ┆ ---          ┆ ---       ┆ ---                             ┆ ---             ┆ ---                           │
+│ str    ┆ f64         ┆ f64        ┆ u32              ┆ f64          ┆ f64       ┆ u32                             ┆ f64             ┆ str                           │
+╞════════╪═════════════╪════════════╪══════════════════╪══════════════╪═══════════╪═════════════════════════════════╪═════════════════╪═══════════════════════════════╡
+│ ABR    ┆ 12.96       ┆ 0.43       ┆ 4                ┆ 12.962963    ┆ 10.193743 ┆ 11                              ┆ 131.519505      ┆ REAL ESTATE INVESTMENT TRUSTS │
+└────────┴─────────────┴────────────┴──────────────────┴──────────────┴───────────┴─────────────────────────────────┴─────────────────┴───────────────────────────────┘
 ```
 
 ##### List all companies which data is available via DripInvesting XLSX documents
