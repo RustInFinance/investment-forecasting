@@ -378,7 +378,7 @@ async fn get_dividiend_data(
 
 pub fn get_polygon_data(
     company: &str,
-) -> Result<(f64, f64, f64, f64, u32, Option<f64>, Option<String>), &'static str> {
+) -> Result<(f64, f64, f64, u32, f64, u32, Option<f64>, Option<String>), &'static str> {
     let mut query_params = HashMap::new();
     query_params.insert("ticker", company);
 
@@ -429,6 +429,12 @@ pub fn get_polygon_data(
             )?;
             log::info!("Stock price: {share_price}, Div Yield[%]: {divy:.2}");
 
+            let (annuallized_div, frequency) = calculate_annualized_div(
+                &div_history,
+                (Utc::now().year() - 1).to_string().as_ref(),
+            )?;
+            log::info!("Annualized dividend: {annuallized_div}, annual frequency: {frequency}");
+
             run = true;
             let mut resp = polygon_client::types::ReferenceStockFinancialsVXResponse {
                 next_url: None,
@@ -444,15 +450,18 @@ pub fn get_polygon_data(
 
             let payout_rate = get_annual_payout_rate(&resp, &div_history)?;
 
-            return Ok::<(f64, f64, f64, f64, u32, Option<f64>, Option<String>), &'static str>((
-                share_price,
-                curr_div,
-                divy,
-                dgr,
-                years_of_growth,
-                payout_rate,
-                sector_desc,
-            ));
+            return Ok::<(f64, f64, f64, u32, f64, u32, Option<f64>, Option<String>), &'static str>(
+                (
+                    share_price,
+                    curr_div,
+                    divy,
+                    frequency,
+                    dgr,
+                    years_of_growth,
+                    payout_rate,
+                    sector_desc,
+                ),
+            );
         })
 }
 
@@ -529,7 +538,7 @@ fn get_basic_average_shares(
 fn calculate_annualized_div(
     div_history: &Vec<(String, f64)>,
     fiscal_year: &str,
-) -> Result<(f64,u32), &'static str> {
+) -> Result<(f64, u32), &'static str> {
     let mut frequency = 0;
     let annuallized_div = div_history
         .iter()
@@ -1047,8 +1056,8 @@ mod tests {
             ("2022-01-01".to_owned(), 0.1),
         ];
 
-        assert_eq!(calculate_annualized_div(&div_hists, "2023"), Ok((7.5,4)));
-        assert_eq!(calculate_annualized_div(&div_hists, "2022"), Ok((0.9,4)));
+        assert_eq!(calculate_annualized_div(&div_hists, "2023"), Ok((7.5, 4)));
+        assert_eq!(calculate_annualized_div(&div_hists, "2022"), Ok((0.9, 4)));
         Ok(())
     }
 

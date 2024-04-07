@@ -255,6 +255,7 @@ fn main() -> Result<(), &'static str> {
                 let mut share_prices: Vec<f64> = vec![];
                 let mut curr_divs: Vec<f64> = vec![];
                 let mut divys: Vec<f64> = vec![];
+                let mut freqs: Vec<u32> = vec![];
                 let mut dgrs: Vec<f64> = vec![];
                 let mut years_growth: Vec<u32> = vec![];
                 let mut payout_ratios: Vec<Option<f64>> = vec![];
@@ -264,6 +265,7 @@ fn main() -> Result<(), &'static str> {
                         share_price,
                         curr_div,
                         divy,
+                        frequency,
                         dgr,
                         years_of_growth,
                         payout_ratio,
@@ -273,6 +275,7 @@ fn main() -> Result<(), &'static str> {
                     share_prices.push(share_price);
                     curr_divs.push(curr_div);
                     divys.push(divy);
+                    freqs.push(frequency);
                     dgrs.push(dgr);
                     years_growth.push(years_of_growth);
                     payout_ratios.push(payout_ratio);
@@ -284,13 +287,15 @@ fn main() -> Result<(), &'static str> {
                 let s1 = Series::new("Symbol", &symbols);
                 let s2 = Series::new("Share Price", share_prices);
                 let s3 = Series::new("Recent Div", curr_divs);
-                let s4 = Series::new("Div Yield[%]", divys);
-                let s5 = Series::new("DGR5G[%]", dgrs);
-                let s6 = Series::new("Years of consecutive Div growth", years_growth);
-                let s7 = Series::new("Payout ratio[%]", payout_ratios);
-                let s8 = Series::new("Industry Desc", sectors);
+                let s4 = Series::new("Annual Frequency", freqs);
+                let s5 = Series::new("Div Yield[%]", divys);
+                let s6 = Series::new("DGR5G[%]", dgrs);
+                let s7 = Series::new("Years of consecutive Div growth", years_growth);
+                let s8 = Series::new("Payout ratio[%]", payout_ratios);
+                let s9 = Series::new("Industry Desc", sectors);
 
-                let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4, s5, s6, s7, s8]).unwrap();
+                let df: DataFrame =
+                    DataFrame::new(vec![s1, s2, s3, s4, s5, s6, s7, s8, s9]).unwrap();
                 println!("{df}");
             }
         }

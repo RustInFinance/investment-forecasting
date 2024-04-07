@@ -245,7 +245,7 @@ fn forecast_dividend_stocks(
     let time_data: Vec<u32> = (1u32..365 * investment_years + 1).collect();
 
     let tax_rate = tax_rate / 100.0;
-    let num_capitalizations: u32 = 4; // TODO: get it out of data 
+    let mut num_capitalizations: u32 = 4;
     let shares_price_growth_rate = shares_price_growth_rate / 100.0;
 
     // make actual plot
@@ -333,9 +333,11 @@ fn forecast_dividend_stocks(
                         (price, dy, dyg)
                     }
                     None => {
-                        let (share_price, _, divy, dgr, _, _, _) =
+
+                        let (share_price, _, divy, frequency,  dgr, _, _, _) =
                             investments_forecasting::get_polygon_data(&name).expect("Error: unable to get Data from polygon IO for forecasting");
-                        log::info!("Forcasting stock: {name} with params: share price({share_price}), Div yield[%]({divy}), DGR5Y[%]({dgr})");
+                        num_capitalizations = frequency;
+                        log::info!("Forcasting stock: {name} with params: share price({share_price}), Frequency(frequency), Div yield[%]({divy}), DGR5Y[%]({dgr})");
                         (share_price, divy/100.0, dgr/100.0)
                     },
                 };
