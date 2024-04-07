@@ -3,6 +3,8 @@ use clap::Parser;
 use gnuplot::{AxesCommon, Caption, Color, Coordinate, Figure};
 use polars::prelude::*;
 
+// TODO: frequency of div paid should be yield based on historical data not fixed to four
+
 /// Program to predict gains from Dividend companies (Fetch XLSX list from: https://moneyzine.com/investments/dividend-champions/)
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -243,7 +245,7 @@ fn forecast_dividend_stocks(
     let time_data: Vec<u32> = (1u32..365 * investment_years + 1).collect();
 
     let tax_rate = tax_rate / 100.0;
-    let num_capitalizations: u32 = 4;
+    let num_capitalizations: u32 = 4; // TODO: get it out of data 
     let shares_price_growth_rate = shares_price_growth_rate / 100.0;
 
     // make actual plot

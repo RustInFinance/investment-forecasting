@@ -2,7 +2,7 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
-// TODO: Add "sector" of company e.g. technology, food, nutrition etc.()debggung test_rust_polygon
+// TODO: Add frequency to have proper forecasting
 // TODO: Date of last ex day
 // TODO: Fix crash "No dividend data" to be replaced with NULL/None
 // TODO: handle companies that do not pay dividends

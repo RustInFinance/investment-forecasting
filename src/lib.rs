@@ -529,7 +529,8 @@ fn get_basic_average_shares(
 fn calculate_annualized_div(
     div_history: &Vec<(String, f64)>,
     fiscal_year: &str,
-) -> Result<f64, &'static str> {
+) -> Result<(f64,u32), &'static str> {
+    let mut frequency = 0;
     let annuallized_div = div_history
         .iter()
         .filter(|x| {
@@ -542,9 +543,10 @@ fn calculate_annualized_div(
         })
         .fold(0.0, |mut acc, num| {
             acc += num.1;
+            frequency += 1;
             acc
         });
-    Ok(annuallized_div)
+    Ok((annuallized_div, frequency))
 }
 
 /// Calculate consecutive years of growing dividend, not including current year
@@ -628,7 +630,7 @@ fn get_annual_payout_rate(
             r.fiscal_period
         );
         // Div payout dates must come from chosen fiscal year
-        let annuallized_div = calculate_annualized_div(div_history, &r.fiscal_year)?;
+        let (annuallized_div, _) = calculate_annualized_div(div_history, &r.fiscal_year)?;
 
         let net_value = get_net_cash_flow(
             &r.financials,
@@ -1045,8 +1047,8 @@ mod tests {
             ("2022-01-01".to_owned(), 0.1),
         ];
 
-        assert_eq!(calculate_annualized_div(&div_hists, "2023"), Ok(7.5));
-        assert_eq!(calculate_annualized_div(&div_hists, "2022"), Ok(0.9));
+        assert_eq!(calculate_annualized_div(&div_hists, "2023"), Ok((7.5,4)));
+        assert_eq!(calculate_annualized_div(&div_hists, "2022"), Ok((0.9,4)));
         Ok(())
     }
 
