@@ -279,19 +279,11 @@ async fn get_dividiend_data(
     query_params: &HashMap<&str, &str>,
 ) -> Result<(f64, f64, u32, Vec<(String, f64)>), &'static str> {
     let dividends_results_to_vec =
-        |results: &Vec<polygon_client::types::ReferenceStockDividendsResultV3>| {
+        |results: &mut Vec<polygon_client::types::ReferenceStockDividendsResultV3>| {
+            results.iter().for_each(|x| {log::info!( "{}: ex date: {}, payment date: {}, div type: {} amount: {}", x.ticker, x.ex_dividend_date, x.pay_date, x.dividend_type, x.cash_amount);});
             let div_history: Vec<(String, f64)> = results
-                .iter()
+                .iter_mut().filter(|x| x.dividend_type == polygon_client::types::DividendType::CD)
                 .map(|x| {
-                    log::info!(
-                        "{}: ex date: {}, payment date: {}, frequency: {}, div type: {} amount: {}",
-                        x.ticker,
-                        x.ex_dividend_date,
-                        x.pay_date,
-                        x.frequency,
-                        x.dividend_type,
-                        x.cash_amount
-                    );
                     (x.pay_date.clone(), x.cash_amount)
                 })
                 .collect();
@@ -311,17 +303,17 @@ async fn get_dividiend_data(
         (resp, run) = should_try_again(maybe_resp, resp);
     }
 
-    let mut div_history: Vec<(String, f64)> = dividends_results_to_vec(&resp.results);
+    let mut div_history: Vec<(String, f64)> = dividends_results_to_vec(&mut resp.results);
     while resp.next_url.clone().is_some() {
         if let Some(url) = &resp.next_url.clone() {
             run = true;
             while run {
-                let maybe_resp = client.fetch_next_page(url).await;
+                let maybe_resp : Result<polygon_client::types::ReferenceStockDividendsResponse, reqwest::Error> = client.fetch_next_page(url).await;
                 log::info!("RESPONSE NEXT PAGE (DIVIDENDS): {maybe_resp:#?}");
                 (resp, run) = should_try_again(maybe_resp, resp);
             }
             // Here let's attach
-            div_history.append(&mut dividends_results_to_vec(&resp.results));
+            div_history.append(&mut dividends_results_to_vec(&mut resp.results));
         }
     }
 
@@ -363,14 +355,14 @@ async fn get_dividiend_data(
         ),
         None => panic!("No dividend Data!"),
     };
-    let (currency, frequency) = if resp.results.len() > 0 {
-        (resp.results[0].currency.clone(), resp.results[0].frequency)
+    let currency = if resp.results.len() > 0 {
+        resp.results[0].currency.clone()
     } else {
         panic!("No dividend Data!");
     };
 
     let dgr = calculate_dgr(&div_history, Utc::now().year().to_string().as_ref())?;
-    log::info!("Current Div: {curr_div} {currency}, Paid date: {curr_div_date},  Frequency: {frequency}, Average DGR(samples: {}): {dgr}",
+    log::info!("Current Div: {curr_div} {currency}, Paid date: {curr_div_date}, Average DGR(samples: {}): {dgr}",
             div_history.len());
 
     Ok((*curr_div, dgr, years_of_growth, div_history))
