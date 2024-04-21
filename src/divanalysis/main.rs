@@ -3,7 +3,7 @@ use clap::Parser;
 use polars::prelude::*;
 
 // TODO: make an export of POLARS_MAX_FMT_COLS
-// TODO: filter out special dividends (SC) 
+// TODO: filter out special dividends (SC)
 // TODO: Fix crash "No dividend data" to be replaced with NULL/None
 // TODO: handle companies that do not pay dividends
 // TODO: Get polygon companies list (multiple pages) (next_url + api key reqwest has to be done)

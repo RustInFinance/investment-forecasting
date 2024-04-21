@@ -9,6 +9,10 @@ use polars::prelude::*;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    /// Symbol names of companies from dividend list as provided with "data" argument
+    #[arg(long, default_value = "dividend-investment-gains.png")]
+    output: String,
+
     /// Data in XLSX format (Fetch from https://moneyzine.com/investments/dividend-champions/)
     #[arg(long)]
     data: Option<String>,
@@ -235,6 +239,7 @@ fn forecast_low_risk_instruments(base_capital: f64) {
 }
 
 fn forecast_dividend_stocks(
+    output_file_name: &str,
     base_capital: f64,
     data: Option<String>,
     companies: Vec<Target>,
@@ -252,7 +257,7 @@ fn forecast_dividend_stocks(
     let colors: Vec<&str> = vec!["blue", "green", "navy", "web-green", "#127cc1", "#76B900"];
     let mut fg = Figure::new();
     let mut max_y = 0.0;
-    fg.set_terminal("pngcairo size 1280,960", "dividend-investment-gains.png");
+    fg.set_terminal("pngcairo size 1280,960", output_file_name);
 
     let axes = fg
         .axes2d()
@@ -456,6 +461,7 @@ fn main() {
             (Some(dy), Some(dg), Some(p)) => {
                 targets.push(Target::manual(&name, dy, dg, p));
                 forecast_dividend_stocks(
+                    args.output.as_ref(),
                     args.capital,
                     args.data,
                     targets,
@@ -468,6 +474,7 @@ fn main() {
         }
     } else {
         forecast_dividend_stocks(
+            args.output.as_ref(),
             args.capital,
             args.data,
             targets,

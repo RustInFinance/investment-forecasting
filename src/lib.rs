@@ -280,12 +280,20 @@ async fn get_dividiend_data(
 ) -> Result<(f64, f64, u32, Vec<(String, f64)>), &'static str> {
     let dividends_results_to_vec =
         |results: &mut Vec<polygon_client::types::ReferenceStockDividendsResultV3>| {
-            results.iter().for_each(|x| {log::info!( "{}: ex date: {}, payment date: {}, div type: {} amount: {}", x.ticker, x.ex_dividend_date, x.pay_date, x.dividend_type, x.cash_amount);});
+            results.iter().for_each(|x| {
+                log::info!(
+                    "{}: ex date: {}, payment date: {}, div type: {} amount: {}",
+                    x.ticker,
+                    x.ex_dividend_date,
+                    x.pay_date,
+                    x.dividend_type,
+                    x.cash_amount
+                );
+            });
             let div_history: Vec<(String, f64)> = results
-                .iter_mut().filter(|x| x.dividend_type == polygon_client::types::DividendType::CD)
-                .map(|x| {
-                    (x.pay_date.clone(), x.cash_amount)
-                })
+                .iter_mut()
+                .filter(|x| x.dividend_type == polygon_client::types::DividendType::CD)
+                .map(|x| (x.pay_date.clone(), x.cash_amount))
                 .collect();
             div_history
         };
@@ -308,7 +316,10 @@ async fn get_dividiend_data(
         if let Some(url) = &resp.next_url.clone() {
             run = true;
             while run {
-                let maybe_resp : Result<polygon_client::types::ReferenceStockDividendsResponse, reqwest::Error> = client.fetch_next_page(url).await;
+                let maybe_resp: Result<
+                    polygon_client::types::ReferenceStockDividendsResponse,
+                    reqwest::Error,
+                > = client.fetch_next_page(url).await;
                 log::info!("RESPONSE NEXT PAGE (DIVIDENDS): {maybe_resp:#?}");
                 (resp, run) = should_try_again(maybe_resp, resp);
             }
