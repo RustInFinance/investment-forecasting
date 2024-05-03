@@ -195,9 +195,10 @@ fn should_try_again<T>(maybe_resp: Result<T, reqwest::Error>, dummy: T) -> (T, b
     }
 }
 
-pub fn get_polygon_companies_list() -> Result<Vec<(String, String)>, &'static str> {
+pub fn get_polygon_companies_list() -> Result<Vec<(String, Option<String>)>, &'static str> {
     let mut query_params = HashMap::new();
     query_params.insert("active", "true");
+    query_params.insert("market", "stocks");
 
     let client = RESTClient::new(None, None);
     // Get all dividend data we can have
@@ -223,17 +224,17 @@ pub fn get_polygon_companies_list() -> Result<Vec<(String, String)>, &'static st
 
             let tickers_results_to_vec =
                 |results: &Vec<polygon_client::types::ReferenceTickersResponseTickerV3>| {
-                    let mut companies: Vec<(String, String)> = results
+                    let mut companies: Vec<(String, Option<String>)> = results
                         .iter()
                         .map(|x| {
-                            log::info!("{}: name: {}, type: {}", x.ticker, x.name, x.market);
+                            log::info!("{}: name: {:?}", x.ticker, x.name);
                             (x.ticker.clone(), x.name.clone())
                         })
                         .collect();
                     companies
                 };
 
-            let mut companies: Vec<(String, String)> = tickers_results_to_vec(&resp.results);
+            let mut companies: Vec<(String, Option<String>)> = tickers_results_to_vec(&resp.results);
 
             while resp.next_url.clone().is_some() {
                 if let Some(url) = &resp.next_url.clone() {
@@ -248,7 +249,7 @@ pub fn get_polygon_companies_list() -> Result<Vec<(String, String)>, &'static st
                 }
             }
 
-            return Ok::<Vec<(String, String)>, &'static str>(companies);
+            return Ok::<Vec<(String, Option<String>)>, &'static str>(companies);
         })
 }
 

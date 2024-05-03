@@ -3,7 +3,8 @@ use clap::Parser;
 use polars::prelude::*;
 
 // TODO: make an export of POLARS_MAX_FMT_COLS
-// TODO: filter out special dividends (SC)
+// TODO: fix all companies list
+// TODO: make downloading all companies data
 // TODO: Fix crash "No dividend data" to be replaced with NULL/None
 // TODO: handle companies that do not pay dividends
 // TODO: Get polygon companies list (multiple pages) (next_url + api key reqwest has to be done)
@@ -205,7 +206,7 @@ fn main() -> Result<(), &'static str> {
                     let companies = investments_forecasting::get_polygon_companies_list()?;
 
                     let mut symbols: Vec<String> = vec![];
-                    let mut names: Vec<String> = vec![];
+                    let mut names: Vec<Option<String>> = vec![];
 
                     companies.into_iter().for_each(|(s, n)| {
                         symbols.push(s);
@@ -219,29 +220,48 @@ fn main() -> Result<(), &'static str> {
                 }
             }
         } else {
-            let data_shortlisted_dy = analyze_div_yield(
-                &data.expect("Error: unable to extract XLSX data"),
-                args.sp500_divy,
-                args.inflation,
-                args.min_div_yield,
-                args.max_div_yield,
-            )?;
-            log::info!("Champions Shortlisted by DivY: {}", data_shortlisted_dy);
+            match data {
+                Some(data) => {
 
-            let data_shortlisted_dy_dp = analyze_dividend_payout_rate(
-                &data_shortlisted_dy,
-                args.max_div_payout_rate / 100.0,
-            )?;
+                    let data_shortlisted_dy = analyze_div_yield(
+                        &data,
+                        args.sp500_divy,
+                        args.inflation,
+                        args.min_div_yield,
+                        args.max_div_yield,
+                    )?;
+                    log::info!("Champions Shortlisted by DivY: {}", data_shortlisted_dy);
 
-            log::info!(
-                "Champions Shortlisted by DivY and Div Pay-Out: {}",
-                data_shortlisted_dy_dp
-            );
+                    let data_shortlisted_dy_dp = analyze_dividend_payout_rate(
+                        &data_shortlisted_dy,
+                        args.max_div_payout_rate / 100.0,
+                    )?;
 
-            let data_shortlisted_dy_dp_dg =
-                analyze_div_growth(&data_shortlisted_dy_dp, args.min_div_growth_rate)?;
+                    log::info!(
+                        "Champions Shortlisted by DivY and Div Pay-Out: {}",
+                        data_shortlisted_dy_dp
+                    );
 
-            print_summary(&data_shortlisted_dy_dp_dg, None)?;
+                    let data_shortlisted_dy_dp_dg =
+                        analyze_div_growth(&data_shortlisted_dy_dp, args.min_div_growth_rate)?;
+
+                    print_summary(&data_shortlisted_dy_dp_dg, None)?;
+                },
+                None => {
+
+                    let companies = investments_forecasting::get_polygon_companies_list()?;
+
+                    let mut symbols: Vec<String> = vec![];
+
+                    companies.into_iter().for_each(|(s,_)| {
+                        symbols.push(s);
+                    });
+
+
+
+
+                },
+            }
         }
     } else {
         match data {
@@ -251,6 +271,10 @@ fn main() -> Result<(), &'static str> {
                     .try_for_each(|symbol| print_summary(&data, Some(&symbol)))?;
             }
             None => {
+
+               // let (symbols, share_prices, curr_divs, divys, freqs, dgrs, years_growth,
+               //      payout_ratios, sectors) = get_polygon_companies_data(&companies)?; 
+
                 let mut symbols: Vec<&str> = vec![];
                 let mut share_prices: Vec<f64> = vec![];
                 let mut curr_divs: Vec<f64> = vec![];
