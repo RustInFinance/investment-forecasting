@@ -365,12 +365,12 @@ async fn get_dividiend_data(
             cash_amount,
             NaiveDate::parse_from_str(&pay_date, "%Y-%m-%d").expect("Wrong payout date format"),
         ),
-        None => panic!("No dividend Data!"),
+        None => return Err("No dividend Data!"),
     };
     let currency = if resp.results.len() > 0 {
         resp.results[0].currency.clone()
     } else {
-        panic!("No dividend Data!");
+        return Err("No dividend Data!");
     };
 
     let dgr = calculate_dgr(&div_history, Utc::now().year().to_string().as_ref())?;
