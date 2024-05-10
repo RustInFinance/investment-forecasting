@@ -320,6 +320,7 @@ fn main() -> Result<(), &'static str> {
 
                 let df: DataFrame =
                     DataFrame::new(vec![s1, s2, s3, s4, s5, s6, s7, s8, s9]).unwrap();
+                let df = df.sort(["Years of consecutive Div growth"],true,false).unwrap();
                 println!("{df}");
             }
         }
