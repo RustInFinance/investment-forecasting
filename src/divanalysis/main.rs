@@ -175,10 +175,27 @@ fn print_summary(df: &DataFrame, company: Option<&str>) -> Result<(), &'static s
         .expect("Unable to add Rate column");
     println!("{selected_df}");
     Ok(())
+} 
+
+fn configure_dataframes_format() {
+    // Make sure to show all columns
+    if std::env::var("POLARS_FMT_MAX_COLS").is_err() {
+        std::env::set_var("POLARS_FMT_MAX_COLS", "9")
+    }
+    // Make sure to show all raws
+    if std::env::var("POLARS_FMT_MAX_ROWS").is_err() {
+        std::env::set_var("POLARS_FMT_MAX_ROWS", "4000")
+    }
+    // Make sure to show Full device name
+    if std::env::var("POLARS_FMT_STR_LEN").is_err() {
+        std::env::set_var("POLARS_FMT_STR_LEN", "200")
+    }
 }
 
 fn main() -> Result<(), &'static str> {
     investments_forecasting::init_logging_infrastructure();
+
+    configure_dataframes_format();
 
     let args = Args::parse();
 
