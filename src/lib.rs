@@ -234,7 +234,8 @@ pub fn get_polygon_companies_list() -> Result<Vec<(String, Option<String>)>, &'s
                     companies
                 };
 
-            let mut companies: Vec<(String, Option<String>)> = tickers_results_to_vec(&resp.results);
+            let mut companies: Vec<(String, Option<String>)> =
+                tickers_results_to_vec(&resp.results);
 
             while resp.next_url.clone().is_some() {
                 if let Some(url) = &resp.next_url.clone() {

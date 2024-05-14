@@ -2,10 +2,9 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
-// TODO: make an export of POLARS_MAX_FMT_COLS
+// TODO: Fix crash "No dividend data" to be replaced with NULL/None
 // TODO: fix all companies list
 // TODO: make downloading all companies data
-// TODO: Fix crash "No dividend data" to be replaced with NULL/None
 // TODO: handle companies that do not pay dividends
 // TODO: Get polygon companies list (multiple pages) (next_url + api key reqwest has to be done)
 // TODO: add ignoring non-complete data
@@ -175,7 +174,7 @@ fn print_summary(df: &DataFrame, company: Option<&str>) -> Result<(), &'static s
         .expect("Unable to add Rate column");
     println!("{selected_df}");
     Ok(())
-} 
+}
 
 fn configure_dataframes_format() {
     // Make sure to show all columns
@@ -184,7 +183,7 @@ fn configure_dataframes_format() {
     }
     // Make sure to show all raws
     if std::env::var("POLARS_FMT_MAX_ROWS").is_err() {
-        std::env::set_var("POLARS_FMT_MAX_ROWS", "4000")
+        std::env::set_var("POLARS_FMT_MAX_ROWS", "-1")
     }
     // Make sure to show Full device name
     if std::env::var("POLARS_FMT_STR_LEN").is_err() {
@@ -239,7 +238,6 @@ fn main() -> Result<(), &'static str> {
         } else {
             match data {
                 Some(data) => {
-
                     let data_shortlisted_dy = analyze_div_yield(
                         &data,
                         args.sp500_divy,
@@ -263,21 +261,16 @@ fn main() -> Result<(), &'static str> {
                         analyze_div_growth(&data_shortlisted_dy_dp, args.min_div_growth_rate)?;
 
                     print_summary(&data_shortlisted_dy_dp_dg, None)?;
-                },
+                }
                 None => {
-
                     let companies = investments_forecasting::get_polygon_companies_list()?;
 
                     let mut symbols: Vec<String> = vec![];
 
-                    companies.into_iter().for_each(|(s,_)| {
+                    companies.into_iter().for_each(|(s, _)| {
                         symbols.push(s);
                     });
-
-
-
-
-                },
+                }
             }
         }
     } else {
@@ -288,9 +281,8 @@ fn main() -> Result<(), &'static str> {
                     .try_for_each(|symbol| print_summary(&data, Some(&symbol)))?;
             }
             None => {
-
-               // let (symbols, share_prices, curr_divs, divys, freqs, dgrs, years_growth,
-               //      payout_ratios, sectors) = get_polygon_companies_data(&companies)?; 
+                // let (symbols, share_prices, curr_divs, divys, freqs, dgrs, years_growth,
+                //      payout_ratios, sectors) = get_polygon_companies_data(&companies)?;
 
                 let mut symbols: Vec<&str> = vec![];
                 let mut share_prices: Vec<f64> = vec![];
@@ -337,7 +329,9 @@ fn main() -> Result<(), &'static str> {
 
                 let df: DataFrame =
                     DataFrame::new(vec![s1, s2, s3, s4, s5, s6, s7, s8, s9]).unwrap();
-                let df = df.sort(["Years of consecutive Div growth"],true,false).unwrap();
+                let df = df
+                    .sort(["Years of consecutive Div growth"], true, false)
+                    .unwrap();
                 println!("{df}");
             }
         }
