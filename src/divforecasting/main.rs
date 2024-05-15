@@ -364,7 +364,7 @@ fn forecast_dividend_stocks(
                             max_y = *x;
                         }
                         format!(
-                        "{name}(DIV Yield[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2}) (Stock[$]: {:.2}, Payout[$]: {:.2} ,Payout2Investment[%]: {:.2}, Total Dividends Gains[$]: {:.2} )",dy*100.0,dyg*100.0,share_price, capital, final_payout,(final_payout/base_capital)*100.0,x
+                        "{name}(DIVY[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2}) (Stock[$]: {:.2}, Payout[$]: {:.2} ,Final DIVY[%]: {:.2}, Total Payout[$]: {:.2} )",dy*100.0,dyg*100.0,share_price, capital, final_payout,num_capitalizations as f64*(final_payout/base_capital)*100.0,x
                     )},
                     None => panic!("Error: No dividend data to plot!"),
                 };
