@@ -2,7 +2,6 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
-// TODO: Fix crash "No dividend data" to be replaced with NULL/None
 // TODO: fix all companies list
 // TODO: make downloading all companies data
 // TODO: handle companies that do not pay dividends

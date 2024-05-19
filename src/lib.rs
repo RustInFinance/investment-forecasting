@@ -374,16 +374,16 @@ async fn get_dividiend_data(
         }
     };
     let currency = if resp.results.len() > 0 {
-        resp.results[0].currency.clone()
+        Some(resp.results[0].currency.clone())
     } else {
-        return Err("No dividend Data!");
+        None
     };
 
     let dgr = calculate_dgr(&div_history, Utc::now().year().to_string().as_ref())?;
-    log::info!("Current Div: {curr_div:?} {currency:?}, Paid date: {curr_div_date:?}, Average DGR(samples: {}): {dgr}",
+    log::info!("Current Div: {curr_div:?} {currency:?}, Paid date: {curr_div_date:?}, Average DGR(samples: {}): {dgr:?}",
             div_history.len());
 
-    Ok((curr_div, Some(dgr), years_of_growth, div_history))
+    Ok((curr_div, dgr, years_of_growth, div_history))
 }
 
 pub fn get_polygon_data(
@@ -633,7 +633,7 @@ fn calculate_consecutive_years_of_growth(
     let mut from_newer_to_older = annual_div.iter().rev();
     let (next_year, mut next_year_div) = from_newer_to_older
         .next()
-        .ok_or("Error: unable to get devidend")?;
+        .ok_or("Error: unable to get dividend")?;
     log::info!("Annual dividend year: {next_year} annual_div: {next_year_div}");
     'petla: for (year, sum) in from_newer_to_older {
         log::info!("Annual dividend year: {year} annual_div: {sum}");
@@ -838,7 +838,7 @@ fn calculate_divy(
     let mut from_newer_to_older = annual_div.iter().rev();
     let annual_div = from_newer_to_older
         .next()
-        .ok_or("Error: unable to get devidend")?
+        .ok_or("Error: unable to get dividend")?
         .1;
 
     Ok(Some(annual_div / share_price * 100.0))
@@ -848,11 +848,15 @@ fn calculate_divy(
 fn calculate_dgr(
     div_history: &Vec<(String, f64)>,
     current_year: &str,
-) -> Result<f64, &'static str> {
+) -> Result<Option<f64>, &'static str> {
     let dhiter = div_history.iter();
 
     let mut average = 0.0;
     let mut annual_div = 0.0;
+
+    if div_history.len() == 0 {
+        return Ok(None);
+    }
 
     let current_year = current_year
         .parse::<i32>()
@@ -881,7 +885,7 @@ fn calculate_dgr(
     let oldest_year = annual_div
         .iter()
         .next()
-        .ok_or("Error: unable to get devidend")?
+        .ok_or("Error: unable to get dividend")?
         .0;
     for y in *oldest_year..current_year {
         if annual_div.contains_key(&y) == false {
@@ -915,9 +919,9 @@ fn calculate_dgr(
     }
 
     if num_averages == 0 {
-        Ok(0.0)
+        Ok(Some(0.0))
     } else {
-        Ok(average / num_averages as f64)
+        Ok(Some(average / num_averages as f64))
     }
 }
 
@@ -957,7 +961,7 @@ mod tests {
             ("2023-07-01".to_owned(), 0.5),
             ("2023-11-01".to_owned(), 0.5),
         ];
-        assert_eq!(calculate_dgr(&div_hists, "2024"), Ok(0.0));
+        assert_eq!(calculate_dgr(&div_hists, "2024"), Ok(Some(0.0)));
 
         let div_hists: Vec<(String, f64)> = vec![
             ("2023-01-01".to_owned(), 0.5),
@@ -969,7 +973,7 @@ mod tests {
             ("2022-07-01".to_owned(), 0.5),
             ("2022-11-01".to_owned(), 0.5),
         ];
-        assert_eq!(calculate_dgr(&div_hists, "2024"), Ok(0.0));
+        assert_eq!(calculate_dgr(&div_hists, "2024"), Ok(Some(0.0)));
 
         let div_hists: Vec<(String, f64)> = vec![
             ("2022-01-01".to_owned(), 0.1),
@@ -981,7 +985,7 @@ mod tests {
             ("2023-07-01".to_owned(), 2.0),
             ("2023-11-01".to_owned(), 3.0),
         ];
-        assert_eq!(calculate_dgr(&div_hists, "2024"), Ok(100.0));
+        assert_eq!(calculate_dgr(&div_hists, "2024"), Ok(Some(100.0)));
 
         let div_hists: Vec<(String, f64)> = vec![
             ("2022-03-01".to_owned(), 0.365),
@@ -995,11 +999,13 @@ mod tests {
             ("2024-03-01".to_owned(), 0.125),
         ];
 
+        assert_eq!(calculate_dgr(&vec![], "2024"), Ok(None));
+
         //0.125*3.0+0.365 = 0.74
         //0.365*4.0 = 1.46
         // DGR: (0.74/1.46 - 1.0)*100.0 = -49.315068
         assert_eq!(
-            Ok::<f64, &str>(round2(calculate_dgr(&div_hists, "2024").unwrap())),
+            Ok::<f64, &str>(round2(calculate_dgr(&div_hists, "2024").unwrap().unwrap())),
             Ok(-49.32)
         );
 
@@ -1014,7 +1020,7 @@ mod tests {
         ];
 
         assert_eq!(
-            Ok::<f64, &str>(round2(calculate_dgr(&div_hists, "2024").unwrap())),
+            Ok::<f64, &str>(round2(calculate_dgr(&div_hists, "2024").unwrap().unwrap())),
             Ok(5.04)
         );
 
@@ -1082,7 +1088,7 @@ mod tests {
         ];
 
         assert_eq!(
-            Ok::<f64, &str>(round2(calculate_dgr(&div_hists, "2024").unwrap())),
+            Ok::<f64, &str>(round2(calculate_dgr(&div_hists, "2024").unwrap().unwrap())),
             Ok(17.58)
         );
 
