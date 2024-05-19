@@ -286,11 +286,11 @@ fn main() -> Result<(), &'static str> {
 
                 let mut symbols: Vec<&str> = vec![];
                 let mut share_prices: Vec<f64> = vec![];
-                let mut curr_divs: Vec<f64> = vec![];
-                let mut divys: Vec<f64> = vec![];
-                let mut freqs: Vec<u32> = vec![];
-                let mut dgrs: Vec<f64> = vec![];
-                let mut years_growth: Vec<u32> = vec![];
+                let mut curr_divs: Vec<Option<f64>> = vec![];
+                let mut divys: Vec<Option<f64>> = vec![];
+                let mut freqs: Vec<Option<u32>> = vec![];
+                let mut dgrs: Vec<Option<f64>> = vec![];
+                let mut years_growth: Vec<Option<u32>> = vec![];
                 let mut payout_ratios: Vec<Option<f64>> = vec![];
                 let mut sectors: Vec<Option<String>> = vec![];
                 companies.iter().try_for_each(|symbol| {

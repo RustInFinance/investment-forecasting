@@ -279,7 +279,7 @@ async fn get_company_details(
 async fn get_dividiend_data(
     client: &RESTClient,
     query_params: &HashMap<&str, &str>,
-) -> Result<(f64, f64, u32, Vec<(String, f64)>), &'static str> {
+) -> Result<(Option<f64>, Option<f64>, Option<u32>, Vec<(String, f64)>), &'static str> {
     let dividends_results_to_vec =
         |results: &mut Vec<polygon_client::types::ReferenceStockDividendsResultV3>| {
             results.iter().for_each(|x| {
@@ -342,7 +342,7 @@ async fn get_dividiend_data(
         &div_history,
         Utc::now().year().to_string().as_ref(),
     )?;
-    log::info!("Consecutive years of dividend growth: {years_of_growth}");
+    log::info!("Consecutive years of dividend growth: {years_of_growth:?}");
 
     let current_year = Utc::now().year();
     let num_years_of_interest = 5;
@@ -363,10 +363,15 @@ async fn get_dividiend_data(
     // Curr Dividend  and corressponding date
     let (curr_div, curr_div_date) = match div_history.iter().rev().next() {
         Some((pay_date, cash_amount)) => (
-            cash_amount,
-            NaiveDate::parse_from_str(&pay_date, "%Y-%m-%d").expect("Wrong payout date format"),
+            Some(*cash_amount),
+            Some(
+                NaiveDate::parse_from_str(&pay_date, "%Y-%m-%d").expect("Wrong payout date format"),
+            ),
         ),
-        None => return Err("No dividend Data!"),
+        None => {
+            log::info!("No dividend Data!");
+            (None, None)
+        }
     };
     let currency = if resp.results.len() > 0 {
         resp.results[0].currency.clone()
@@ -375,15 +380,27 @@ async fn get_dividiend_data(
     };
 
     let dgr = calculate_dgr(&div_history, Utc::now().year().to_string().as_ref())?;
-    log::info!("Current Div: {curr_div} {currency}, Paid date: {curr_div_date}, Average DGR(samples: {}): {dgr}",
+    log::info!("Current Div: {curr_div:?} {currency:?}, Paid date: {curr_div_date:?}, Average DGR(samples: {}): {dgr}",
             div_history.len());
 
-    Ok((*curr_div, dgr, years_of_growth, div_history))
+    Ok((curr_div, Some(dgr), years_of_growth, div_history))
 }
 
 pub fn get_polygon_data(
     company: &str,
-) -> Result<(f64, f64, f64, u32, f64, u32, Option<f64>, Option<String>), &'static str> {
+) -> Result<
+    (
+        f64,
+        Option<f64>,
+        Option<f64>,
+        Option<u32>,
+        Option<f64>,
+        Option<u32>,
+        Option<f64>,
+        Option<String>,
+    ),
+    &'static str,
+> {
     let mut query_params = HashMap::new();
     query_params.insert("ticker", company);
 
@@ -432,13 +449,16 @@ pub fn get_polygon_data(
                 share_price,
                 Utc::now().year().to_string().as_ref(),
             )?;
-            log::info!("Stock price: {share_price}, Div Yield[%]: {divy:.2}");
+            log::info!("Stock price: {share_price}, Div Yield[%]: {divy:.2?}");
 
-            let (annuallized_div, frequency) = calculate_annualized_div(
+            let (annuallized_div, frequency) = match calculate_annualized_div(
                 &div_history,
                 (Utc::now().year() - 1).to_string().as_ref(),
-            )?;
-            log::info!("Annualized dividend: {annuallized_div}, annual frequency: {frequency}");
+            )? {
+                Some((annuallized_div, frequency)) => (Some(annuallized_div), Some(frequency)),
+                None => (None, None),
+            };
+            log::info!("Annualized dividend: {annuallized_div:?}, annual frequency: {frequency:?}");
 
             run = true;
             let mut resp = polygon_client::types::ReferenceStockFinancialsVXResponse {
@@ -455,18 +475,28 @@ pub fn get_polygon_data(
 
             let payout_rate = get_annual_payout_rate(&resp, &div_history)?;
 
-            return Ok::<(f64, f64, f64, u32, f64, u32, Option<f64>, Option<String>), &'static str>(
+            return Ok::<
                 (
-                    share_price,
-                    curr_div,
-                    divy,
-                    frequency,
-                    dgr,
-                    years_of_growth,
-                    payout_rate,
-                    sector_desc,
+                    f64,
+                    Option<f64>,
+                    Option<f64>,
+                    Option<u32>,
+                    Option<f64>,
+                    Option<u32>,
+                    Option<f64>,
+                    Option<String>,
                 ),
-            );
+                &'static str,
+            >((
+                share_price,
+                curr_div,
+                divy,
+                frequency,
+                dgr,
+                years_of_growth,
+                payout_rate,
+                sector_desc,
+            ));
         })
 }
 
@@ -543,7 +573,11 @@ fn get_basic_average_shares(
 fn calculate_annualized_div(
     div_history: &Vec<(String, f64)>,
     fiscal_year: &str,
-) -> Result<(f64, u32), &'static str> {
+) -> Result<Option<(f64, u32)>, &'static str> {
+    if div_history.len() == 0 {
+        return Ok(None);
+    }
+
     let mut frequency = 0;
     let annuallized_div = div_history
         .iter()
@@ -560,18 +594,22 @@ fn calculate_annualized_div(
             frequency += 1;
             acc
         });
-    Ok((annuallized_div, frequency))
+    Ok(Some((annuallized_div, frequency)))
 }
 
 /// Calculate consecutive years of growing dividend, not including current year
 fn calculate_consecutive_years_of_growth(
     div_history: &Vec<(String, f64)>,
     current_year: &str,
-) -> Result<u32, &'static str> {
+) -> Result<Option<u32>, &'static str> {
     let current_year = current_year
         .parse::<i32>()
         .expect("Unable to parse currrent year");
     let mut annual_div: BTreeMap<i32, f64> = BTreeMap::new();
+
+    if div_history.len() == 0 {
+        return Ok(None);
+    }
 
     div_history.iter().try_for_each(|x| {
         let year = NaiveDate::parse_from_str(&x.0, "%Y-%m-%d")
@@ -607,7 +645,7 @@ fn calculate_consecutive_years_of_growth(
         }
     }
 
-    Ok(num_consecutive_years)
+    Ok(Some(num_consecutive_years))
 }
 
 fn get_annual_payout_rate(
@@ -644,7 +682,10 @@ fn get_annual_payout_rate(
             r.fiscal_period
         );
         // Div payout dates must come from chosen fiscal year
-        let (annuallized_div, _) = calculate_annualized_div(div_history, &r.fiscal_year)?;
+        let annuallized_div = match calculate_annualized_div(div_history, &r.fiscal_year)? {
+            Some((x, _)) => Some(x),
+            None => None,
+        };
 
         let net_value = get_net_cash_flow(
             &r.financials,
@@ -658,13 +699,15 @@ fn get_annual_payout_rate(
             r.fiscal_year.as_ref(),
             r.fiscal_period.as_ref(),
         )?;
-        let payout_rate = match basic_average_shares {
-            Some(num_shares) => Some(calculate_payout_ratio(
+        let payout_rate = match (basic_average_shares, annuallized_div) {
+            (Some(num_shares), Some(annuallized_div)) => Some(calculate_payout_ratio(
                 annuallized_div,
                 num_shares,
                 net_value,
             )?),
-            None => None,
+            (None, Some(_)) => None,
+            (Some(_), None) => None,
+            (None, None) => None,
         };
         Ok(payout_rate)
     } else {
@@ -759,7 +802,7 @@ fn calculate_divy(
     div_history: &Vec<(String, f64)>,
     share_price: f64,
     current_year: &str,
-) -> Result<f64, &'static str> {
+) -> Result<Option<f64>, &'static str> {
     let dhiter = div_history.iter();
 
     let mut average = 0.0;
@@ -769,6 +812,10 @@ fn calculate_divy(
         .parse::<i32>()
         .expect("Unable to parse currrent year");
     let mut annual_div: BTreeMap<i32, f64> = BTreeMap::new();
+
+    if div_history.len() == 0 {
+        return Ok(None);
+    }
 
     div_history.iter().try_for_each(|x| {
         let year = NaiveDate::parse_from_str(&x.0, "%Y-%m-%d")
@@ -794,7 +841,7 @@ fn calculate_divy(
         .ok_or("Error: unable to get devidend")?
         .1;
 
-    Ok(annual_div / share_price * 100.0)
+    Ok(Some(annual_div / share_price * 100.0))
 }
 
 /// DGR On quaterly basis calculate
@@ -890,7 +937,7 @@ mod tests {
             ("2023-07-01".to_owned(), 0.5),
             ("2023-11-01".to_owned(), 0.5),
         ];
-        assert_eq!(calculate_divy(&div_hists, 100.0, "2024"), Ok(2.0));
+        assert_eq!(calculate_divy(&div_hists, 100.0, "2024"), Ok(Some(2.0)));
 
         let div_hists: Vec<(String, f64)> = vec![
             ("2023-01-01".to_owned(), 1.0),
@@ -898,7 +945,7 @@ mod tests {
             ("2023-07-01".to_owned(), 2.0),
             ("2023-11-01".to_owned(), 4.0),
         ];
-        assert_eq!(calculate_divy(&div_hists, 100.0, "2024"), Ok(8.0));
+        assert_eq!(calculate_divy(&div_hists, 100.0, "2024"), Ok(Some(8.0)));
         Ok(())
     }
 
@@ -1061,13 +1108,25 @@ mod tests {
             ("2022-01-01".to_owned(), 0.1),
         ];
 
-        assert_eq!(calculate_annualized_div(&div_hists, "2023"), Ok((7.5, 4)));
-        assert_eq!(calculate_annualized_div(&div_hists, "2022"), Ok((0.9, 4)));
+        assert_eq!(
+            calculate_annualized_div(&div_hists, "2023"),
+            Ok(Some((7.5, 4)))
+        );
+        assert_eq!(
+            calculate_annualized_div(&div_hists, "2022"),
+            Ok(Some((0.9, 4)))
+        );
+        assert_eq!(calculate_annualized_div(&vec![], "2022"), Ok(None));
         Ok(())
     }
 
     #[test]
     fn test_calculate_consecutive_years_of_growth() -> Result<(), String> {
+        let div_hists: Vec<(String, f64)> = vec![];
+        assert_eq!(
+            calculate_consecutive_years_of_growth(&div_hists, "2024"),
+            Ok(None)
+        );
         let div_hists: Vec<(String, f64)> = vec![
             ("2023-01-01".to_owned(), 0.5),
             ("2023-04-01".to_owned(), 1.0),
@@ -1080,7 +1139,7 @@ mod tests {
         ];
         assert_eq!(
             calculate_consecutive_years_of_growth(&div_hists, "2024"),
-            Ok(1)
+            Ok(Some(1))
         );
 
         let div_hists: Vec<(String, f64)> = vec![
@@ -1096,7 +1155,7 @@ mod tests {
         ];
         assert_eq!(
             calculate_consecutive_years_of_growth(&div_hists, "2024"),
-            Ok(1)
+            Ok(Some(1))
         );
 
         let div_hists: Vec<(String, f64)> = vec![
@@ -1112,7 +1171,7 @@ mod tests {
         ];
         assert_eq!(
             calculate_consecutive_years_of_growth(&div_hists, "2024"),
-            Ok(0)
+            Ok(Some(0))
         );
 
         let div_hists: Vec<(String, f64)> = vec![
@@ -1132,7 +1191,7 @@ mod tests {
         ];
         assert_eq!(
             calculate_consecutive_years_of_growth(&div_hists, "2024"),
-            Ok(1)
+            Ok(Some(1))
         );
 
         Ok(())
