@@ -631,6 +631,11 @@ fn calculate_consecutive_years_of_growth(
         Ok::<(), &str>(())
     })?;
 
+    if annual_div.len() == 0 {
+        log::info!("No annual dividend data found");
+        return Ok(None);
+    }
+
     let mut num_consecutive_years = 0;
     let mut from_newer_to_older = annual_div.iter().rev();
     let (next_year, mut next_year_div) = from_newer_to_older
@@ -838,6 +843,11 @@ fn calculate_divy(
         Ok::<(), &str>(())
     })?;
 
+    if annual_div.len() == 0 {
+        log::info!("No full annual dividend data found to compute DIVY");
+        return Ok(None);
+    }
+
     let mut from_newer_to_older = annual_div.iter().rev();
     let annual_div = from_newer_to_older
         .next()
@@ -884,7 +894,12 @@ fn calculate_dgr(
         Ok::<(), &str>(())
     })?;
 
+    if annual_div.len() == 0 {
+        log::info!("No valid annual dividend data found to compute DGR");
+        return Ok(None);
+    }
     // Update data with zeros when there was no dividends in a given historical period
+
     let oldest_year = annual_div
         .iter()
         .next()
