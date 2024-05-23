@@ -284,7 +284,7 @@ async fn get_dividiend_data(
         |results: &mut Vec<polygon_client::types::ReferenceStockDividendsResultV3>| {
             results.iter().for_each(|x| {
                 log::info!(
-                    "{}: ex date: {}, payment date: {}, div type: {} amount: {}",
+                    "{}: ex date: {}, payment date: {:?}, div type: {} amount: {}",
                     x.ticker,
                     x.ex_dividend_date,
                     x.pay_date,
@@ -294,8 +294,8 @@ async fn get_dividiend_data(
             });
             let div_history: Vec<(String, f64)> = results
                 .iter_mut()
-                .filter(|x| x.dividend_type == polygon_client::types::DividendType::CD)
-                .map(|x| (x.pay_date.clone(), x.cash_amount))
+                .filter(|x| x.dividend_type == polygon_client::types::DividendType::CD && x.pay_date.is_some() == true )
+                .map(|x| (x.pay_date.clone().unwrap(), x.cash_amount))
                 .collect();
             div_history
         };
