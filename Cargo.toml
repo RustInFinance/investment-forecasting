@@ -23,4 +23,5 @@ simple_logger = "4.2.0"
 polars = "0.34.2"
 clap = { version = "4.4.6", features = ["derive"] }
 polygon-client = {  git = "https://github.com/jczaja/polygon-client-rs.git"}
+#polygon-client = {path = "../polygon-client-rs/"}
 reqwest = "0.11.24"

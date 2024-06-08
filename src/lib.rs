@@ -433,7 +433,7 @@ pub fn get_polygon_data(
                 let maybe_resp = client
                     .stock_equities_previous_close(company, &HashMap::new())
                     .await;
-                log::info!("RESPONSE(STOCK EQUITIES): {resp:#?}");
+                log::info!("RESPONSE(STOCK EQUITIES): {maybe_resp:#?}");
                 (resp, run) = should_try_again(maybe_resp, resp);
             }
 
@@ -469,7 +469,7 @@ pub fn get_polygon_data(
             };
             while run {
                 let maybe_resp = client.reference_stock_financials_vx(&query_params).await;
-                log::info!("RESPONSE(STOCK FINANCIALS): {resp:#?}");
+                log::info!("RESPONSE(STOCK FINANCIALS): {maybe_resp:#?}");
                 (resp, run) = should_try_again(maybe_resp, resp);
             }
 
