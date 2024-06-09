@@ -190,6 +190,59 @@ fn configure_dataframes_format() {
     }
 }
 
+fn get_polygon_companies_data(companies: &Vec<String>) -> Result<(), &'static str> {
+    let mut symbols: Vec<&str> = vec![];
+    let mut share_prices: Vec<f64> = vec![];
+    let mut curr_divs: Vec<Option<f64>> = vec![];
+    let mut divys: Vec<Option<f64>> = vec![];
+    let mut freqs: Vec<Option<u32>> = vec![];
+    let mut dgrs: Vec<Option<f64>> = vec![];
+    let mut years_growth: Vec<Option<u32>> = vec![];
+    let mut payout_ratios: Vec<Option<f64>> = vec![];
+    let mut sectors: Vec<Option<String>> = vec![];
+    companies.iter().try_for_each(|symbol| {
+        let (
+            share_price,
+            curr_div,
+            divy,
+            frequency,
+            dgr,
+            years_of_growth,
+            payout_ratio,
+            sector_desc,
+        ) = investments_forecasting::get_polygon_data(&symbol)?;
+
+        share_prices.push(share_price);
+        curr_divs.push(curr_div);
+        divys.push(divy);
+        freqs.push(frequency);
+        dgrs.push(dgr);
+        years_growth.push(years_of_growth);
+        payout_ratios.push(payout_ratio);
+        symbols.push(&symbol);
+        sectors.push(sector_desc);
+        Ok::<(), &'static str>(())
+    })?;
+
+    let s1 = Series::new("Symbol", &symbols);
+    let s2 = Series::new("Share Price", share_prices);
+    let s3 = Series::new("Recent Div", curr_divs);
+    let s4 = Series::new("Annual Frequency", freqs);
+    let s5 = Series::new("Div Yield[%]", divys);
+    let s6 = Series::new("DGR5G[%]", dgrs);
+    let s7 = Series::new("Years of consecutive Div growth", years_growth);
+    let s8 = Series::new("Payout ratio[%]", payout_ratios);
+    let s9 = Series::new("Industry Desc", sectors);
+
+    let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4, s5, s6, s7, s8, s9]).unwrap();
+    let df = df
+        .sort(["Years of consecutive Div growth"], true, false)
+        .unwrap();
+    println!("{df}");
+
+    Ok(())
+}
+
 fn main() -> Result<(), &'static str> {
     investments_forecasting::init_logging_infrastructure();
 
@@ -269,6 +322,7 @@ fn main() -> Result<(), &'static str> {
                     companies.into_iter().for_each(|(s, _)| {
                         symbols.push(s);
                     });
+                    get_polygon_companies_data(&symbols)?;
                 }
             }
         }
@@ -283,55 +337,7 @@ fn main() -> Result<(), &'static str> {
                 // let (symbols, share_prices, curr_divs, divys, freqs, dgrs, years_growth,
                 //      payout_ratios, sectors) = get_polygon_companies_data(&companies)?;
 
-                let mut symbols: Vec<&str> = vec![];
-                let mut share_prices: Vec<f64> = vec![];
-                let mut curr_divs: Vec<Option<f64>> = vec![];
-                let mut divys: Vec<Option<f64>> = vec![];
-                let mut freqs: Vec<Option<u32>> = vec![];
-                let mut dgrs: Vec<Option<f64>> = vec![];
-                let mut years_growth: Vec<Option<u32>> = vec![];
-                let mut payout_ratios: Vec<Option<f64>> = vec![];
-                let mut sectors: Vec<Option<String>> = vec![];
-                companies.iter().try_for_each(|symbol| {
-                    let (
-                        share_price,
-                        curr_div,
-                        divy,
-                        frequency,
-                        dgr,
-                        years_of_growth,
-                        payout_ratio,
-                        sector_desc,
-                    ) = investments_forecasting::get_polygon_data(&symbol)?;
-
-                    share_prices.push(share_price);
-                    curr_divs.push(curr_div);
-                    divys.push(divy);
-                    freqs.push(frequency);
-                    dgrs.push(dgr);
-                    years_growth.push(years_of_growth);
-                    payout_ratios.push(payout_ratio);
-                    symbols.push(&symbol);
-                    sectors.push(sector_desc);
-                    Ok::<(), &'static str>(())
-                })?;
-
-                let s1 = Series::new("Symbol", &symbols);
-                let s2 = Series::new("Share Price", share_prices);
-                let s3 = Series::new("Recent Div", curr_divs);
-                let s4 = Series::new("Annual Frequency", freqs);
-                let s5 = Series::new("Div Yield[%]", divys);
-                let s6 = Series::new("DGR5G[%]", dgrs);
-                let s7 = Series::new("Years of consecutive Div growth", years_growth);
-                let s8 = Series::new("Payout ratio[%]", payout_ratios);
-                let s9 = Series::new("Industry Desc", sectors);
-
-                let df: DataFrame =
-                    DataFrame::new(vec![s1, s2, s3, s4, s5, s6, s7, s8, s9]).unwrap();
-                let df = df
-                    .sort(["Years of consecutive Div growth"], true, false)
-                    .unwrap();
-                println!("{df}");
+                get_polygon_companies_data(&companies)?;
             }
         }
     }
