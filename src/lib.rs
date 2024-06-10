@@ -528,11 +528,12 @@ fn get_net_cash_flow(
             );
 
             // curr_div * num_shares  / net_value
-            net_value
+            Some(net_value)
         } else {
-            return Err("Missing net_cash_flow_from_operating_activities");
+            log::info!("Error: Implement missing cash flow operating statement");
+            None
         };
-        Some(net_value)
+        net_value
     } else {
         log::info!("Error: Implement missing cash flow statement");
         None
