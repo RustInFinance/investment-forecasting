@@ -1720,7 +1720,7 @@ dependencies = [
 [[package]]
 name = "polygon-client"
 version = "0.1.1"
-source = "git+https://github.com/jczaja/polygon-client-rs.git#e9509e50cc499925fb70586a4e528f00658d8930"
+source = "git+https://github.com/jczaja/polygon-client-rs.git#207be6a543af70c97c1ab9b7cc80a19490c73f09"
 dependencies = [
  "chrono",
  "lazy_static",

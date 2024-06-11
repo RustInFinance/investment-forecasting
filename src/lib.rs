@@ -425,12 +425,12 @@ pub fn get_polygon_data(
             let mut run = true;
             let mut resp = polygon_client::types::StockEquitiesPreviousCloseResponse {
                 ticker: "".to_owned(),
-                results: vec![],
+                results: Some(vec![]),
                 count: Some(0),
-                query_count: 0,
+                query_count: Some(0),
                 results_count: Some(0),
                 status: Some("OK".to_owned()),
-                adjusted: false,
+                adjusted: Some(false),
             };
             while run {
                 let maybe_resp = client
@@ -440,12 +440,34 @@ pub fn get_polygon_data(
                 (resp, run) = should_try_again(maybe_resp, resp);
             }
 
-            let prev_day_share_data = resp
-                .results
-                .iter()
-                .next()
-                .ok_or("Error reading previous date share price")?;
-            let share_price = prev_day_share_data.c;
+            let share_price = match resp.results {
+                Some(ref results) => {
+                    let share_price = results
+                        .iter()
+                        .next()
+                        .ok_or("Error reading previous date share price")?
+                        .c;
+                    log::info!("Stock price: {share_price}");
+                    share_price
+                }
+                None => {
+                    log::info!("No stock price data found");
+                    return Ok::<
+                        (
+                            f64,
+                            Option<f64>,
+                            Option<f64>,
+                            Option<u32>,
+                            Option<f64>,
+                            Option<u32>,
+                            Option<f64>,
+                            Option<String>,
+                        ),
+                        &'static str,
+                    >((0.0, None, None, None, None, None, None, None));
+                }
+            };
+        
 
             let divy = calculate_divy(
                 &div_history,
