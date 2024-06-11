@@ -426,10 +426,10 @@ pub fn get_polygon_data(
             let mut resp = polygon_client::types::StockEquitiesPreviousCloseResponse {
                 ticker: "".to_owned(),
                 results: vec![],
-                count: 0,
+                count: Some(0),
                 query_count: 0,
-                results_count: 0,
-                status: "OK".to_owned(),
+                results_count: Some(0),
+                status: Some("OK".to_owned()),
                 adjusted: false,
             };
             while run {
