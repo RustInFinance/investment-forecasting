@@ -200,7 +200,7 @@ fn get_polygon_companies_data(companies: &Vec<String>) -> Result<(), &'static st
     let mut years_growth: Vec<Option<u32>> = vec![];
     let mut payout_ratios: Vec<Option<f64>> = vec![];
     let mut sectors: Vec<Option<String>> = vec![];
-    companies.iter().try_for_each(|symbol| {
+    let maybe_success = companies.iter().try_for_each(|symbol| {
         let (
             share_price,
             curr_div,
@@ -222,7 +222,12 @@ fn get_polygon_companies_data(companies: &Vec<String>) -> Result<(), &'static st
         symbols.push(&symbol);
         sectors.push(sector_desc);
         Ok::<(), &'static str>(())
-    })?;
+    });
+
+    match maybe_success {
+        Ok(_) => log::info!("Acquiring of all companies via polygon succeeded!"),
+        Err(e) => log::info!("Acquiring of all companies via polygon failed! Error: {e} . Partial results are available"),
+    }
 
     let s1 = Series::new("Symbol", &symbols);
     let s2 = Series::new("Share Price", share_prices);
