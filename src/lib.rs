@@ -173,9 +173,9 @@ pub fn init_logging_infrastructure() {
     }
     simple_logger::SimpleLogger::new().env().init().unwrap();
 }
-fn should_try_again<T>(maybe_resp: Result<T, reqwest::Error>, dummy: T) -> (T, bool) {
+fn should_try_again<T>(maybe_resp: Result<T, reqwest::Error>, dummy: T) -> Result<(T, bool),&'static str> {
     match maybe_resp {
-        Ok(r) => (r, false),
+        Ok(r) => Ok((r, false)),
         Err(e) => {
             log::info!("Error: {:?}", e.status());
             let repeat = if let Some(status) = e.status() {
@@ -185,12 +185,14 @@ fn should_try_again<T>(maybe_resp: Result<T, reqwest::Error>, dummy: T) -> (T, b
                     std::thread::sleep(thirty_secs);
                     true
                 } else {
-                    panic!("POLYGON API: failed to query tickers");
+                    log::warn!("POLYGON API: failed to query tickers");
+                    return Err("POLYGON_API: Unhandled error");
                 }
             } else {
-                panic!("POLYGON API: failed to query tickers");
+                log::warn!("POLYGON API: failed to query tickers");
+                return Err("POLYGON_API: Unrecognized error");
             };
-            (dummy, repeat)
+            Ok((dummy, repeat))
         }
     }
 }
@@ -219,7 +221,7 @@ pub fn get_polygon_companies_list() -> Result<Vec<(String, Option<String>)>, &'s
             while run {
                 let maybe_resp = client.reference_tickers(&query_params).await;
                 log::info!("RESPONSE(LIST COMPANIES): {maybe_resp:#?}");
-                (resp, run) = should_try_again(maybe_resp, resp);
+                (resp, run) = should_try_again(maybe_resp, resp)?;
             }
 
             let tickers_results_to_vec =
@@ -243,7 +245,7 @@ pub fn get_polygon_companies_list() -> Result<Vec<(String, Option<String>)>, &'s
                     while run {
                         let maybe_resp = client.fetch_next_page(url).await;
                         log::info!("RESPONSE NEXT PAGE (LIST COMPANIES): {maybe_resp:#?}");
-                        (resp, run) = should_try_again(maybe_resp, resp);
+                        (resp, run) = should_try_again(maybe_resp, resp)?;
                     }
                     // Here let's attach
                     companies.append(&mut tickers_results_to_vec(&resp.results));
@@ -270,7 +272,7 @@ async fn get_company_details(
             .reference_ticker_details(company, &HashMap::new())
             .await;
         log::info!("RESPONSE(COMPANY DETAILS): {maybe_resp:#?}");
-        (resp, run) = should_try_again(maybe_resp, resp);
+        (resp, run) = should_try_again(maybe_resp, resp)?;
     }
 
     Ok(resp.results.sic_description)
@@ -313,7 +315,7 @@ async fn get_dividiend_data(
     while run {
         let maybe_resp = client.reference_stock_dividends(&query_params).await;
         log::info!("RESPONSE(DIVIDENDS): {maybe_resp:#?}");
-        (resp, run) = should_try_again(maybe_resp, resp);
+        (resp, run) = should_try_again(maybe_resp, resp)?;
     }
 
     let mut div_history: Vec<(String, f64)> = dividends_results_to_vec(&mut resp.results);
@@ -326,7 +328,7 @@ async fn get_dividiend_data(
                     reqwest::Error,
                 > = client.fetch_next_page(url).await;
                 log::info!("RESPONSE NEXT PAGE (DIVIDENDS): {maybe_resp:#?}");
-                (resp, run) = should_try_again(maybe_resp, resp);
+                (resp, run) = should_try_again(maybe_resp, resp)?;
             }
             // Here let's attach
             div_history.append(&mut dividends_results_to_vec(&mut resp.results));
@@ -437,7 +439,7 @@ pub fn get_polygon_data(
                     .stock_equities_previous_close(company, &HashMap::new())
                     .await;
                 log::info!("RESPONSE(STOCK EQUITIES): {maybe_resp:#?}");
-                (resp, run) = should_try_again(maybe_resp, resp);
+                (resp, run) = should_try_again(maybe_resp, resp)?;
             }
 
             let share_price = match resp.results {
@@ -495,7 +497,7 @@ pub fn get_polygon_data(
             while run {
                 let maybe_resp = client.reference_stock_financials_vx(&query_params).await;
                 log::info!("RESPONSE(STOCK FINANCIALS): {maybe_resp:#?}");
-                (resp, run) = should_try_again(maybe_resp, resp);
+                (resp, run) = should_try_again(maybe_resp, resp)?;
             }
 
             let payout_rate = get_annual_payout_rate(&resp, &div_history)?;
