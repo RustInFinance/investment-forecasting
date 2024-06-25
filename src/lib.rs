@@ -173,7 +173,10 @@ pub fn init_logging_infrastructure() {
     }
     simple_logger::SimpleLogger::new().env().init().unwrap();
 }
-fn should_try_again<T>(maybe_resp: Result<T, reqwest::Error>, dummy: T) -> Result<(T, bool),&'static str> {
+fn should_try_again<T>(
+    maybe_resp: Result<T, reqwest::Error>,
+    dummy: T,
+) -> Result<(T, bool), &'static str> {
     match maybe_resp {
         Ok(r) => Ok((r, false)),
         Err(e) => {
@@ -272,7 +275,10 @@ async fn get_company_details(
             .reference_ticker_details(company, &HashMap::new())
             .await;
         log::info!("RESPONSE(COMPANY DETAILS): {maybe_resp:#?}");
-        (resp, run) = should_try_again(maybe_resp, resp)?;
+        (resp, run) = match should_try_again(maybe_resp, resp) {
+            Ok((lresp, lrun)) => (lresp, lrun),
+            Err(_) => return Ok(None),
+        };
     }
 
     Ok(resp.results.sic_description)
@@ -315,7 +321,10 @@ async fn get_dividiend_data(
     while run {
         let maybe_resp = client.reference_stock_dividends(&query_params).await;
         log::info!("RESPONSE(DIVIDENDS): {maybe_resp:#?}");
-        (resp, run) = should_try_again(maybe_resp, resp)?;
+        (resp, run) = match should_try_again(maybe_resp, resp) {
+            Ok((resp, run)) => (resp, run),
+            Err(_) => return Ok((None, None, None, vec![])),
+        };
     }
 
     let mut div_history: Vec<(String, f64)> = dividends_results_to_vec(&mut resp.results);
@@ -328,7 +337,10 @@ async fn get_dividiend_data(
                     reqwest::Error,
                 > = client.fetch_next_page(url).await;
                 log::info!("RESPONSE NEXT PAGE (DIVIDENDS): {maybe_resp:#?}");
-                (resp, run) = should_try_again(maybe_resp, resp)?;
+                (resp, run) = match should_try_again(maybe_resp, resp) {
+                    Ok((resp, run)) => (resp, run),
+                    Err(_) => return Ok((None, None, None, vec![])),
+                };
             }
             // Here let's attach
             div_history.append(&mut dividends_results_to_vec(&mut resp.results));
@@ -439,7 +451,33 @@ pub fn get_polygon_data(
                     .stock_equities_previous_close(company, &HashMap::new())
                     .await;
                 log::info!("RESPONSE(STOCK EQUITIES): {maybe_resp:#?}");
-                (resp, run) = should_try_again(maybe_resp, resp)?;
+                (resp, run) = match should_try_again(maybe_resp, resp) {
+                    Ok((resp, run)) => (resp, run),
+                    Err(_) => {
+                        return Ok::<
+                            (
+                                f64,
+                                Option<f64>,
+                                Option<f64>,
+                                Option<u32>,
+                                Option<f64>,
+                                Option<u32>,
+                                Option<f64>,
+                                Option<String>,
+                            ),
+                            &'static str,
+                        >((
+                            0.0,
+                            curr_div,
+                            None,
+                            None,
+                            dgr,
+                            years_of_growth,
+                            None,
+                            sector_desc,
+                        ))
+                    }
+                };
             }
 
             let share_price = match resp.results {
@@ -466,10 +504,18 @@ pub fn get_polygon_data(
                             Option<String>,
                         ),
                         &'static str,
-                    >((0.0, None, None, None, None, None, None, None));
+                    >((
+                        0.0,
+                        curr_div,
+                        None,
+                        None,
+                        dgr,
+                        years_of_growth,
+                        None,
+                        sector_desc,
+                    ));
                 }
             };
-        
 
             let divy = calculate_divy(
                 &div_history,
@@ -497,7 +543,33 @@ pub fn get_polygon_data(
             while run {
                 let maybe_resp = client.reference_stock_financials_vx(&query_params).await;
                 log::info!("RESPONSE(STOCK FINANCIALS): {maybe_resp:#?}");
-                (resp, run) = should_try_again(maybe_resp, resp)?;
+                (resp, run) = match should_try_again(maybe_resp, resp) {
+                    Ok((resp, run)) => (resp, run),
+                    Err(_) => {
+                        return Ok::<
+                            (
+                                f64,
+                                Option<f64>,
+                                Option<f64>,
+                                Option<u32>,
+                                Option<f64>,
+                                Option<u32>,
+                                Option<f64>,
+                                Option<String>,
+                            ),
+                            &'static str,
+                        >((
+                            share_price,
+                            curr_div,
+                            divy,
+                            frequency,
+                            dgr,
+                            years_of_growth,
+                            None,
+                            sector_desc,
+                        ))
+                    }
+                };
             }
 
             let payout_rate = get_annual_payout_rate(&resp, &div_history)?;
