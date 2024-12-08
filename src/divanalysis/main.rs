@@ -2,6 +2,7 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
+// TODO: Handle Ctrl-C to store data into file
 // TODO: fix all companies list
 // TODO: make downloading all companies data
 // TODO: handle companies that do not pay dividends
@@ -31,6 +32,15 @@ struct Args {
     /// when no "data" is given
     #[arg(long, default_values_t = &[] )]
     company: Vec<String>,
+
+    /// List all available companies (from database if given or polygon in case of no given
+    /// database
+    #[arg(long = "continue", default_value_t = false, requires = "company")]
+    cont: bool,
+
+    /// csv file to read DataFrame from and to write to
+    #[arg(long, default_value = None)]
+    database: Option<String>,
 
     /// Average USA inflation during investment time[%]
     #[arg(long, default_value_t = 3.4)]
@@ -190,14 +200,17 @@ fn configure_dataframes_format() {
     }
 }
 
-fn get_polygon_companies_data(companies: &Vec<String>) -> Result<(), &'static str> {
+fn get_polygon_companies_data(
+    companies: &Vec<String>,
+    database: Option<String>,
+) -> Result<(), &'static str> {
     let mut symbols: Vec<&str> = vec![];
     let mut share_prices: Vec<f64> = vec![];
     let mut curr_divs: Vec<Option<f64>> = vec![];
     let mut divys: Vec<Option<f64>> = vec![];
-    let mut freqs: Vec<Option<u32>> = vec![];
+    let mut freqs: Vec<Option<i64>> = vec![];
     let mut dgrs: Vec<Option<f64>> = vec![];
-    let mut years_growth: Vec<Option<u32>> = vec![];
+    let mut years_growth: Vec<Option<i64>> = vec![];
     let mut payout_ratios: Vec<Option<f64>> = vec![];
     let mut sectors: Vec<Option<String>> = vec![];
     let maybe_success = companies.iter().try_for_each(|symbol| {
@@ -238,12 +251,48 @@ fn get_polygon_companies_data(companies: &Vec<String>) -> Result<(), &'static st
     let s7 = Series::new("Years of consecutive Div growth", years_growth);
     let s8 = Series::new("Payout ratio[%]", payout_ratios);
     let s9 = Series::new("Industry Desc", sectors);
-
     let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4, s5, s6, s7, s8, s9]).unwrap();
-    let df = df
+
+    let df = if let Some(database) = database.clone() {
+        let file = std::fs::OpenOptions::new().read(true).open(&database);
+
+        let df = if let Ok(file) = file {
+            log::info!("Reading DataFrame from: {database} file");
+
+            let read_df = CsvReader::new(file)
+                .has_header(true)
+                .finish()
+                .map_err(|_| "Unable to read DataFrame from CSV file")?;
+
+            println!("Schema df1: {:?}", read_df.schema());
+            println!("Schema df2: {:?}", df.schema());
+
+            read_df
+                .vstack(&df)
+                .map_err(|_| "Unable to combine data frames")?
+        } else {
+            log::info!("Creating a CSV file: {database} file to store DataFrame");
+            df
+        };
+        df
+    } else {
+        df
+    };
+
+    let mut df = df
         .sort(["Years of consecutive Div growth"], true, false)
         .unwrap();
     println!("{df}");
+
+    if let Some(database) = database {
+        let mut file = std::fs::File::create(&database).map_err(|_| "Unable to create CSV file")?;
+
+        CsvWriter::new(&mut file)
+            .has_header(true)
+            .finish(&mut df)
+            .map_err(|_| "Unable to write DataFrame into CSV file")?;
+        log::info!("DataFrame was written to: {database} file");
+    }
 
     Ok(())
 }
@@ -327,7 +376,7 @@ fn main() -> Result<(), &'static str> {
                     companies.into_iter().for_each(|(s, _)| {
                         symbols.push(s);
                     });
-                    get_polygon_companies_data(&symbols)?;
+                    get_polygon_companies_data(&symbols, args.database)?;
                 }
             }
         }
@@ -339,10 +388,28 @@ fn main() -> Result<(), &'static str> {
                     .try_for_each(|symbol| print_summary(&data, Some(&symbol)))?;
             }
             None => {
-                // let (symbols, share_prices, curr_divs, divys, freqs, dgrs, years_growth,
-                //      payout_ratios, sectors) = get_polygon_companies_data(&companies)?;
+                // If we to continue then we get list of all companies
+                // and start execution from company being a value of argument "company"
+                let companies = if args.cont {
+                    let company_to_start = companies[0].clone();
+                    let companies = investments_forecasting::get_polygon_companies_list()?;
+                    let companies: Vec<String> = companies.iter().map(|(s, _)| s.clone()).collect();
+                    let company_to_start_index = companies
+                        .iter()
+                        .position(|x| x == &company_to_start)
+                        .ok_or("Error creating filter of min_growth_rate")?;
 
-                get_polygon_companies_data(&companies)?;
+                    let companies = companies
+                        .iter()
+                        .enumerate()
+                        .filter(|&(index, _)| index >= company_to_start_index)
+                        .map(|(_, company)| company.clone())
+                        .collect();
+                    companies
+                } else {
+                    companies
+                };
+                get_polygon_companies_data(&companies, args.database)?;
             }
         }
     }

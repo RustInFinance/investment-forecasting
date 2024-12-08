@@ -287,7 +287,7 @@ async fn get_company_details(
 async fn get_dividiend_data(
     client: &RESTClient,
     query_params: &HashMap<&str, &str>,
-) -> Result<(Option<f64>, Option<f64>, Option<u32>, Vec<(String, f64)>), &'static str> {
+) -> Result<(Option<f64>, Option<f64>, Option<i64>, Vec<(String, f64)>), &'static str> {
     let dividends_results_to_vec =
         |results: &mut Vec<polygon_client::types::ReferenceStockDividendsResultV3>| {
             results.iter().for_each(|x| {
@@ -410,9 +410,9 @@ pub fn get_polygon_data(
         f64,
         Option<f64>,
         Option<f64>,
-        Option<u32>,
+        Option<i64>,
         Option<f64>,
-        Option<u32>,
+        Option<i64>,
         Option<f64>,
         Option<String>,
     ),
@@ -459,9 +459,9 @@ pub fn get_polygon_data(
                                 f64,
                                 Option<f64>,
                                 Option<f64>,
-                                Option<u32>,
+                                Option<i64>,
                                 Option<f64>,
-                                Option<u32>,
+                                Option<i64>,
                                 Option<f64>,
                                 Option<String>,
                             ),
@@ -497,9 +497,9 @@ pub fn get_polygon_data(
                             f64,
                             Option<f64>,
                             Option<f64>,
-                            Option<u32>,
+                            Option<i64>,
                             Option<f64>,
-                            Option<u32>,
+                            Option<i64>,
                             Option<f64>,
                             Option<String>,
                         ),
@@ -551,9 +551,9 @@ pub fn get_polygon_data(
                                 f64,
                                 Option<f64>,
                                 Option<f64>,
-                                Option<u32>,
+                                Option<i64>,
                                 Option<f64>,
-                                Option<u32>,
+                                Option<i64>,
                                 Option<f64>,
                                 Option<String>,
                             ),
@@ -579,9 +579,9 @@ pub fn get_polygon_data(
                     f64,
                     Option<f64>,
                     Option<f64>,
-                    Option<u32>,
+                    Option<i64>,
                     Option<f64>,
-                    Option<u32>,
+                    Option<i64>,
                     Option<f64>,
                     Option<String>,
                 ),
@@ -675,7 +675,7 @@ fn get_basic_average_shares(
 fn calculate_annualized_div(
     div_history: &Vec<(String, f64)>,
     fiscal_year: &str,
-) -> Result<Option<(f64, u32)>, &'static str> {
+) -> Result<Option<(f64, i64)>, &'static str> {
     if div_history.len() == 0 {
         return Ok(None);
     }
@@ -703,7 +703,7 @@ fn calculate_annualized_div(
 fn calculate_consecutive_years_of_growth(
     div_history: &Vec<(String, f64)>,
     current_year: &str,
-) -> Result<Option<u32>, &'static str> {
+) -> Result<Option<i64>, &'static str> {
     let current_year = current_year
         .parse::<i32>()
         .expect("Unable to parse currrent year");
