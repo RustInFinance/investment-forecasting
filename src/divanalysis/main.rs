@@ -2,10 +2,9 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
-// TODO: Handle Ctrl-C to store data into file
+// TODO CCOI tocker present huge dividend payout rate (1000% investigate why)
 // TODO: fix all companies list
 // TODO: make downloading all companies data
-// TODO: handle companies that do not pay dividends
 // TODO: Get polygon companies list (multiple pages) (next_url + api key reqwest has to be done)
 // TODO: add ignoring non-complete data
 // TODO: Make UK list supported
@@ -201,7 +200,7 @@ fn configure_dataframes_format() {
 }
 
 fn get_polygon_companies_data(
-    companies: &Vec<String>,
+    companies: &[String],
     database: Option<String>,
 ) -> Result<(), &'static str> {
     let mut symbols: Vec<&str> = vec![];
@@ -213,6 +212,52 @@ fn get_polygon_companies_data(
     let mut years_growth: Vec<Option<i64>> = vec![];
     let mut payout_ratios: Vec<Option<f64>> = vec![];
     let mut sectors: Vec<Option<String>> = vec![];
+
+    let s1 = Series::new("Symbol", &symbols);
+    let s2 = Series::new("Share Price", share_prices.clone());
+    let s3 = Series::new("Recent Div", curr_divs.clone());
+    let s4 = Series::new("Annual Frequency", freqs.clone());
+    let s5 = Series::new("Div Yield[%]", divys.clone());
+    let s6 = Series::new("DGR5G[%]", dgrs.clone());
+    let s7 = Series::new("Years of consecutive Div growth", years_growth.clone());
+    let s8 = Series::new("Payout ratio[%]", payout_ratios.clone());
+    let s9 = Series::new("Industry Desc", sectors.clone());
+    let df: DataFrame = DataFrame::new(vec![
+        s1.clone(),
+        s2.clone(),
+        s3.clone(),
+        s4.clone(),
+        s5.clone(),
+        s6.clone(),
+        s7.clone(),
+        s8.clone(),
+        s9.clone(),
+    ])
+    .unwrap();
+
+    let start_df = if let Some(database) = database.clone() {
+        let file = std::fs::OpenOptions::new().read(true).open(&database);
+
+        let df = if let Ok(file) = file {
+            log::info!("Reading DataFrame from: {database} file");
+
+            let read_df = CsvReader::new(file)
+                .has_header(true)
+                .finish()
+                .map_err(|_| "Unable to read DataFrame from CSV file")?;
+
+            read_df
+                .vstack(&df)
+                .map_err(|_| "Unable to combine data frames")?
+        } else {
+            log::info!("Creating a CSV file: {database} file to store DataFrame");
+            df
+        };
+        df
+    } else {
+        df
+    };
+
     let maybe_success = companies.iter().try_for_each(|symbol| {
         let (
             share_price,
@@ -234,6 +279,49 @@ fn get_polygon_companies_data(
         payout_ratios.push(payout_ratio);
         symbols.push(&symbol);
         sectors.push(sector_desc);
+
+        if let Some(database) = database.clone() {
+            let s1 = Series::new("Symbol", &symbols);
+            let s2 = Series::new("Share Price", share_prices.clone());
+            let s3 = Series::new("Recent Div", curr_divs.clone());
+            let s4 = Series::new("Annual Frequency", freqs.clone());
+            let s5 = Series::new("Div Yield[%]", divys.clone());
+            let s6 = Series::new("DGR5G[%]", dgrs.clone());
+            let s7 = Series::new("Years of consecutive Div growth", years_growth.clone());
+            let s8 = Series::new("Payout ratio[%]", payout_ratios.clone());
+            let s9 = Series::new("Industry Desc", sectors.clone());
+
+            let df: DataFrame = DataFrame::new(vec![
+                s1.clone(),
+                s2.clone(),
+                s3.clone(),
+                s4.clone(),
+                s5.clone(),
+                s6.clone(),
+                s7.clone(),
+                s8.clone(),
+                s9.clone(),
+            ])
+            .unwrap();
+
+            let df = start_df
+                .vstack(&df)
+                .map_err(|_| "Unable to combine data frames")?;
+
+            let mut df = df
+                .sort(["Years of consecutive Div growth"], true, false)
+                .unwrap();
+
+            let mut file =
+                std::fs::File::create(&database).map_err(|_| "Unable to create CSV file")?;
+
+            CsvWriter::new(&mut file)
+                .has_header(true)
+                .finish(&mut df)
+                .map_err(|_| "Unable to write DataFrame into CSV file")?;
+            log::info!("DataFrame was written to: {database} file");
+        }
+
         Ok::<(), &'static str>(())
     });
 
@@ -241,58 +329,38 @@ fn get_polygon_companies_data(
         Ok(_) => log::info!("Acquiring of all companies via polygon succeeded!"),
         Err(e) => log::info!("Acquiring of all companies via polygon failed! Error: {e} . Partial results are available"),
     }
-
     let s1 = Series::new("Symbol", &symbols);
-    let s2 = Series::new("Share Price", share_prices);
-    let s3 = Series::new("Recent Div", curr_divs);
-    let s4 = Series::new("Annual Frequency", freqs);
-    let s5 = Series::new("Div Yield[%]", divys);
-    let s6 = Series::new("DGR5G[%]", dgrs);
-    let s7 = Series::new("Years of consecutive Div growth", years_growth);
-    let s8 = Series::new("Payout ratio[%]", payout_ratios);
-    let s9 = Series::new("Industry Desc", sectors);
-    let df: DataFrame = DataFrame::new(vec![s1, s2, s3, s4, s5, s6, s7, s8, s9]).unwrap();
+    let s2 = Series::new("Share Price", share_prices.clone());
+    let s3 = Series::new("Recent Div", curr_divs.clone());
+    let s4 = Series::new("Annual Frequency", freqs.clone());
+    let s5 = Series::new("Div Yield[%]", divys.clone());
+    let s6 = Series::new("DGR5G[%]", dgrs.clone());
+    let s7 = Series::new("Years of consecutive Div growth", years_growth.clone());
+    let s8 = Series::new("Payout ratio[%]", payout_ratios.clone());
+    let s9 = Series::new("Industry Desc", sectors.clone());
 
-    let df = if let Some(database) = database.clone() {
-        let file = std::fs::OpenOptions::new().read(true).open(&database);
+    let df: DataFrame = DataFrame::new(vec![
+        s1.clone(),
+        s2.clone(),
+        s3.clone(),
+        s4.clone(),
+        s5.clone(),
+        s6.clone(),
+        s7.clone(),
+        s8.clone(),
+        s9.clone(),
+    ])
+    .unwrap();
 
-        let df = if let Ok(file) = file {
-            log::info!("Reading DataFrame from: {database} file");
+    let df = start_df
+        .vstack(&df)
+        .map_err(|_| "Unable to combine data frames")?;
 
-            let read_df = CsvReader::new(file)
-                .has_header(true)
-                .finish()
-                .map_err(|_| "Unable to read DataFrame from CSV file")?;
-
-            println!("Schema df1: {:?}", read_df.schema());
-            println!("Schema df2: {:?}", df.schema());
-
-            read_df
-                .vstack(&df)
-                .map_err(|_| "Unable to combine data frames")?
-        } else {
-            log::info!("Creating a CSV file: {database} file to store DataFrame");
-            df
-        };
-        df
-    } else {
-        df
-    };
-
-    let mut df = df
+    let df = df
         .sort(["Years of consecutive Div growth"], true, false)
         .unwrap();
+
     println!("{df}");
-
-    if let Some(database) = database {
-        let mut file = std::fs::File::create(&database).map_err(|_| "Unable to create CSV file")?;
-
-        CsvWriter::new(&mut file)
-            .has_header(true)
-            .finish(&mut df)
-            .map_err(|_| "Unable to write DataFrame into CSV file")?;
-        log::info!("DataFrame was written to: {database} file");
-    }
 
     Ok(())
 }
