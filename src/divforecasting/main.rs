@@ -3,7 +3,7 @@ use clap::Parser;
 use gnuplot::{AxesCommon, Caption, Color, Coordinate, Figure};
 use polars::prelude::*;
 
-// TODO: frequency of div paid should be yield based on historical data not fixed to four
+// TODO: for given company make both reinvesting and no-reinvesting scenarios
 
 /// Program to predict gains from Dividend companies (Fetch XLSX list from: https://moneyzine.com/investments/dividend-champions/)
 #[derive(Parser, Debug)]
@@ -339,7 +339,7 @@ fn forecast_dividend_stocks(
                     }
                     None => {
 
-                        let (share_price, _, divy, frequency,  dgr, _, _, _) =
+                        let (share_price, _, divy, frequency,  dgr, _,_, _, _) =
                             investments_forecasting::get_polygon_data(&name).expect("Error: unable to get Data from polygon IO for forecasting");
                         num_capitalizations = frequency.expect("Cannot forecast dividend gains as there is no dividend data") as u32;
                         let divy = divy.expect("Cannot forecast dividend gains as there is no dividend data");

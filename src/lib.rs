@@ -287,7 +287,16 @@ async fn get_company_details(
 async fn get_dividiend_data(
     client: &RESTClient,
     query_params: &HashMap<&str, &str>,
-) -> Result<(Option<f64>, Option<f64>, Option<i64>, Vec<(String, f64)>), &'static str> {
+) -> Result<
+    (
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+        Option<i64>,
+        Vec<(String, f64)>,
+    ),
+    &'static str,
+> {
     let dividends_results_to_vec =
         |results: &mut Vec<polygon_client::types::ReferenceStockDividendsResultV3>| {
             results.iter().for_each(|x| {
@@ -323,7 +332,7 @@ async fn get_dividiend_data(
         log::info!("RESPONSE(DIVIDENDS): {maybe_resp:#?}");
         (resp, run) = match should_try_again(maybe_resp, resp) {
             Ok((resp, run)) => (resp, run),
-            Err(_) => return Ok((None, None, None, vec![])),
+            Err(_) => return Ok((None, None, None, None, vec![])),
         };
     }
 
@@ -339,7 +348,7 @@ async fn get_dividiend_data(
                 log::info!("RESPONSE NEXT PAGE (DIVIDENDS): {maybe_resp:#?}");
                 (resp, run) = match should_try_again(maybe_resp, resp) {
                     Ok((resp, run)) => (resp, run),
-                    Err(_) => return Ok((None, None, None, vec![])),
+                    Err(_) => return Ok((None, None, None, None, vec![])),
                 };
             }
             // Here let's attach
@@ -361,21 +370,30 @@ async fn get_dividiend_data(
     )?;
     log::info!("Consecutive years of dividend growth: {years_of_growth:?}");
 
+    let trim_div_history = |div_history: Vec<(String, f64)>,
+                            current_year: i32,
+                            num_years_of_interest: i32|
+     -> Vec<(String, f64)> {
+        div_history
+            .into_iter()
+            .filter(|x| {
+                let x_date_year = NaiveDate::parse_from_str(&x.0, "%Y-%m-%d")
+                    .expect("unable to parse date")
+                    .year();
+                // Current year data is not used
+                if x_date_year == current_year {
+                    false
+                } else if (current_year - x_date_year) <= num_years_of_interest {
+                    true
+                } else {
+                    false
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+
     let current_year = Utc::now().year();
-    let num_years_of_interest = 5;
-    let div_history = div_history
-        .into_iter()
-        .filter(|x| {
-            let x_date_year = NaiveDate::parse_from_str(&x.0, "%Y-%m-%d")
-                .expect("unable to parse date")
-                .year();
-            if (current_year - x_date_year) <= num_years_of_interest {
-                true
-            } else {
-                false
-            }
-        })
-        .collect::<Vec<_>>();
+    let div_history = trim_div_history(div_history, current_year, 6);
 
     // Curr Dividend  and corressponding date
     let (curr_div, curr_div_date) = match div_history.iter().rev().next() {
@@ -396,11 +414,16 @@ async fn get_dividiend_data(
         None
     };
 
-    let dgr = calculate_dgr(&div_history, Utc::now().year().to_string().as_ref())?;
-    log::info!("Current Div: {curr_div:?} {currency:?}, Paid date: {curr_div_date:?}, Average DGR(samples: {}): {dgr:?}",
+    let shorted_div_history = trim_div_history(div_history.clone(), current_year, 2);
+    log::info!("Shorted dividend history: {shorted_div_history:#?}");
+    let current_year = current_year.to_string();
+    let dgr = calculate_dgr(&div_history, current_year.as_ref())?;
+    let dgr1y = calculate_dgr(&shorted_div_history, current_year.as_ref())?;
+
+    log::info!("Current Div: {curr_div:?} {currency:?}, Paid date: {curr_div_date:?}, Average DGR(samples: {}): {dgr:?}, DGR 1Y : {dgr1y:?}",
             div_history.len());
 
-    Ok((curr_div, dgr, years_of_growth, div_history))
+    Ok((curr_div, dgr, dgr1y, years_of_growth, div_history))
 }
 
 pub fn get_polygon_data(
@@ -411,6 +434,7 @@ pub fn get_polygon_data(
         Option<f64>,
         Option<f64>,
         Option<i64>,
+        Option<f64>,
         Option<f64>,
         Option<i64>,
         Option<f64>,
@@ -428,7 +452,7 @@ pub fn get_polygon_data(
         .build()
         .unwrap()
         .block_on(async {
-            let (curr_div, dgr, years_of_growth, div_history) =
+            let (curr_div, dgr, dgr1y, years_of_growth, div_history) =
                 get_dividiend_data(&client, &query_params).await?;
 
             let sector_desc = get_company_details(&client, company).await?;
@@ -461,6 +485,7 @@ pub fn get_polygon_data(
                                 Option<f64>,
                                 Option<i64>,
                                 Option<f64>,
+                                Option<f64>,
                                 Option<i64>,
                                 Option<f64>,
                                 Option<String>,
@@ -472,6 +497,7 @@ pub fn get_polygon_data(
                             None,
                             None,
                             dgr,
+                            dgr1y,
                             years_of_growth,
                             None,
                             sector_desc,
@@ -499,6 +525,7 @@ pub fn get_polygon_data(
                             Option<f64>,
                             Option<i64>,
                             Option<f64>,
+                            Option<f64>,
                             Option<i64>,
                             Option<f64>,
                             Option<String>,
@@ -510,6 +537,7 @@ pub fn get_polygon_data(
                         None,
                         None,
                         dgr,
+                        dgr1y,
                         years_of_growth,
                         None,
                         sector_desc,
@@ -553,6 +581,7 @@ pub fn get_polygon_data(
                                 Option<f64>,
                                 Option<i64>,
                                 Option<f64>,
+                                Option<f64>,
                                 Option<i64>,
                                 Option<f64>,
                                 Option<String>,
@@ -564,6 +593,7 @@ pub fn get_polygon_data(
                             divy,
                             frequency,
                             dgr,
+                            dgr1y,
                             years_of_growth,
                             None,
                             sector_desc,
@@ -581,6 +611,7 @@ pub fn get_polygon_data(
                     Option<f64>,
                     Option<i64>,
                     Option<f64>,
+                    Option<f64>,
                     Option<i64>,
                     Option<f64>,
                     Option<String>,
@@ -592,6 +623,7 @@ pub fn get_polygon_data(
                 divy,
                 frequency,
                 dgr,
+                dgr1y,
                 years_of_growth,
                 payout_rate,
                 sector_desc,

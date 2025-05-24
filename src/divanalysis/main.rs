@@ -2,7 +2,8 @@ use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
 
-// TODO CCOI tocker present huge dividend payout rate (1000% investigate why)
+// TODO: Add support for Revenue and FCF
+// TODO: Make payout ratio based on FCF
 // TODO: fix all companies list
 // TODO: make downloading all companies data
 // TODO: Get polygon companies list (multiple pages) (next_url + api key reqwest has to be done)
@@ -187,7 +188,7 @@ fn print_summary(df: &DataFrame, company: Option<&str>) -> Result<(), &'static s
 fn configure_dataframes_format() {
     // Make sure to show all columns
     if std::env::var("POLARS_FMT_MAX_COLS").is_err() {
-        std::env::set_var("POLARS_FMT_MAX_COLS", "9")
+        std::env::set_var("POLARS_FMT_MAX_COLS", "10")
     }
     // Make sure to show all raws
     if std::env::var("POLARS_FMT_MAX_ROWS").is_err() {
@@ -209,6 +210,7 @@ fn get_polygon_companies_data(
     let mut divys: Vec<Option<f64>> = vec![];
     let mut freqs: Vec<Option<i64>> = vec![];
     let mut dgrs: Vec<Option<f64>> = vec![];
+    let mut dgr1ys: Vec<Option<f64>> = vec![];
     let mut years_growth: Vec<Option<i64>> = vec![];
     let mut payout_ratios: Vec<Option<f64>> = vec![];
     let mut sectors: Vec<Option<String>> = vec![];
@@ -218,10 +220,11 @@ fn get_polygon_companies_data(
     let s3 = Series::new("Recent Div", curr_divs.clone());
     let s4 = Series::new("Annual Frequency", freqs.clone());
     let s5 = Series::new("Div Yield[%]", divys.clone());
-    let s6 = Series::new("DGR5G[%]", dgrs.clone());
-    let s7 = Series::new("Years of consecutive Div growth", years_growth.clone());
-    let s8 = Series::new("Payout ratio[%]", payout_ratios.clone());
-    let s9 = Series::new("Industry Desc", sectors.clone());
+    let s6 = Series::new("DGR 1Y[%]", dgr1ys.clone());
+    let s7 = Series::new("DGR 5Y[%]", dgrs.clone());
+    let s8 = Series::new("Years of consecutive Div growth", years_growth.clone());
+    let s9 = Series::new("Payout ratio[%]", payout_ratios.clone());
+    let s10 = Series::new("Industry Desc", sectors.clone());
     let df: DataFrame = DataFrame::new(vec![
         s1.clone(),
         s2.clone(),
@@ -232,6 +235,7 @@ fn get_polygon_companies_data(
         s7.clone(),
         s8.clone(),
         s9.clone(),
+        s10.clone(),
     ])
     .unwrap();
 
@@ -265,6 +269,7 @@ fn get_polygon_companies_data(
             divy,
             frequency,
             dgr,
+            dgr1y,
             years_of_growth,
             payout_ratio,
             sector_desc,
@@ -274,6 +279,7 @@ fn get_polygon_companies_data(
         curr_divs.push(curr_div);
         divys.push(divy);
         freqs.push(frequency);
+        dgr1ys.push(dgr1y);
         dgrs.push(dgr);
         years_growth.push(years_of_growth);
         payout_ratios.push(payout_ratio);
@@ -286,10 +292,11 @@ fn get_polygon_companies_data(
             let s3 = Series::new("Recent Div", curr_divs.clone());
             let s4 = Series::new("Annual Frequency", freqs.clone());
             let s5 = Series::new("Div Yield[%]", divys.clone());
-            let s6 = Series::new("DGR5G[%]", dgrs.clone());
-            let s7 = Series::new("Years of consecutive Div growth", years_growth.clone());
-            let s8 = Series::new("Payout ratio[%]", payout_ratios.clone());
-            let s9 = Series::new("Industry Desc", sectors.clone());
+            let s6 = Series::new("DGR 1Y[%]", dgr1ys.clone());
+            let s7 = Series::new("DGR 5Y[%]", dgrs.clone());
+            let s8 = Series::new("Years of consecutive Div growth", years_growth.clone());
+            let s9 = Series::new("Payout ratio[%]", payout_ratios.clone());
+            let s10 = Series::new("Industry Desc", sectors.clone());
 
             let df: DataFrame = DataFrame::new(vec![
                 s1.clone(),
@@ -301,6 +308,7 @@ fn get_polygon_companies_data(
                 s7.clone(),
                 s8.clone(),
                 s9.clone(),
+                s10.clone(),
             ])
             .unwrap();
 
@@ -334,10 +342,11 @@ fn get_polygon_companies_data(
     let s3 = Series::new("Recent Div", curr_divs.clone());
     let s4 = Series::new("Annual Frequency", freqs.clone());
     let s5 = Series::new("Div Yield[%]", divys.clone());
-    let s6 = Series::new("DGR5G[%]", dgrs.clone());
-    let s7 = Series::new("Years of consecutive Div growth", years_growth.clone());
-    let s8 = Series::new("Payout ratio[%]", payout_ratios.clone());
-    let s9 = Series::new("Industry Desc", sectors.clone());
+    let s6 = Series::new("DGR 1Y[%]", dgr1ys.clone());
+    let s7 = Series::new("DGR 5Y[%]", dgrs.clone());
+    let s8 = Series::new("Years of consecutive Div growth", years_growth.clone());
+    let s9 = Series::new("Payout ratio[%]", payout_ratios.clone());
+    let s10 = Series::new("Industry Desc", sectors.clone());
 
     let df: DataFrame = DataFrame::new(vec![
         s1.clone(),
@@ -349,6 +358,7 @@ fn get_polygon_companies_data(
         s7.clone(),
         s8.clone(),
         s9.clone(),
+        s10.clone(),
     ])
     .unwrap();
 
