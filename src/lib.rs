@@ -292,6 +292,8 @@ async fn get_dividiend_data(
         Option<f64>,
         Option<f64>,
         Option<f64>,
+        Option<f64>,
+        Option<f64>,
         Option<i64>,
         Vec<(String, f64)>,
     ),
@@ -332,7 +334,7 @@ async fn get_dividiend_data(
         log::info!("RESPONSE(DIVIDENDS): {maybe_resp:#?}");
         (resp, run) = match should_try_again(maybe_resp, resp) {
             Ok((resp, run)) => (resp, run),
-            Err(_) => return Ok((None, None, None, None, vec![])),
+            Err(_) => return Ok((None, None, None, None,None,None, vec![])),
         };
     }
 
@@ -348,7 +350,7 @@ async fn get_dividiend_data(
                 log::info!("RESPONSE NEXT PAGE (DIVIDENDS): {maybe_resp:#?}");
                 (resp, run) = match should_try_again(maybe_resp, resp) {
                     Ok((resp, run)) => (resp, run),
-                    Err(_) => return Ok((None, None, None, None, vec![])),
+                    Err(_) => return Ok((None, None, None, None, None,None, vec![])),
                 };
             }
             // Here let's attach
@@ -393,7 +395,7 @@ async fn get_dividiend_data(
     };
 
     let current_year = Utc::now().year();
-    let div_history = trim_div_history(div_history, current_year, 6);
+    let div_history = trim_div_history(div_history, current_year, 11);
 
     // Curr Dividend  and corressponding date
     let (curr_div, curr_div_date) = match div_history.iter().rev().next() {
@@ -414,16 +416,20 @@ async fn get_dividiend_data(
         None
     };
 
-    let shorted_div_history = trim_div_history(div_history.clone(), current_year, 2);
-    log::info!("Shorted dividend history: {shorted_div_history:#?}");
+    let shorter_div_history = trim_div_history(div_history.clone(), current_year, 6);
+    let even_shorter_div_history = trim_div_history(div_history.clone(), current_year, 4);
+    let shortest_div_history = trim_div_history(div_history.clone(), current_year, 2);
+    log::info!("Shorted dividend history: {even_shorter_div_history:#?}");
     let current_year = current_year.to_string();
     let dgr = calculate_dgr(&div_history, current_year.as_ref())?;
-    let dgr1y = calculate_dgr(&shorted_div_history, current_year.as_ref())?;
+    let dgr5y = calculate_dgr(&shorter_div_history, current_year.as_ref())?;
+    let dgr3y = calculate_dgr(&even_shorter_div_history, current_year.as_ref())?;
+    let dgr1y = calculate_dgr(&shortest_div_history, current_year.as_ref())?;
 
     log::info!("Current Div: {curr_div:?} {currency:?}, Paid date: {curr_div_date:?}, Average DGR(samples: {}): {dgr:?}, DGR 1Y : {dgr1y:?}",
             div_history.len());
 
-    Ok((curr_div, dgr, dgr1y, years_of_growth, div_history))
+    Ok((curr_div, dgr, dgr5y, dgr3y, dgr1y, years_of_growth, div_history))
 }
 
 pub fn get_polygon_data(
@@ -434,6 +440,8 @@ pub fn get_polygon_data(
         Option<f64>,
         Option<f64>,
         Option<i64>,
+        Option<f64>,
+        Option<f64>,
         Option<f64>,
         Option<f64>,
         Option<i64>,
@@ -452,7 +460,7 @@ pub fn get_polygon_data(
         .build()
         .unwrap()
         .block_on(async {
-            let (curr_div, dgr, dgr1y, years_of_growth, div_history) =
+            let (curr_div, dgr, dgr5y, dgr3y, dgr1y, years_of_growth, div_history) =
                 get_dividiend_data(&client, &query_params).await?;
 
             let sector_desc = get_company_details(&client, company).await?;
@@ -486,6 +494,8 @@ pub fn get_polygon_data(
                                 Option<i64>,
                                 Option<f64>,
                                 Option<f64>,
+                                Option<f64>,
+                                Option<f64>,
                                 Option<i64>,
                                 Option<f64>,
                                 Option<String>,
@@ -497,6 +507,8 @@ pub fn get_polygon_data(
                             None,
                             None,
                             dgr,
+                            dgr5y,
+                            dgr3y,
                             dgr1y,
                             years_of_growth,
                             None,
@@ -526,6 +538,8 @@ pub fn get_polygon_data(
                             Option<i64>,
                             Option<f64>,
                             Option<f64>,
+                            Option<f64>,
+                            Option<f64>,
                             Option<i64>,
                             Option<f64>,
                             Option<String>,
@@ -537,6 +551,8 @@ pub fn get_polygon_data(
                         None,
                         None,
                         dgr,
+                        dgr5y,
+                        dgr3y,
                         dgr1y,
                         years_of_growth,
                         None,
@@ -582,6 +598,8 @@ pub fn get_polygon_data(
                                 Option<i64>,
                                 Option<f64>,
                                 Option<f64>,
+                                Option<f64>,
+                                Option<f64>,
                                 Option<i64>,
                                 Option<f64>,
                                 Option<String>,
@@ -593,6 +611,8 @@ pub fn get_polygon_data(
                             divy,
                             frequency,
                             dgr,
+                            dgr5y,
+                            dgr3y,
                             dgr1y,
                             years_of_growth,
                             None,
@@ -612,6 +632,8 @@ pub fn get_polygon_data(
                     Option<i64>,
                     Option<f64>,
                     Option<f64>,
+                    Option<f64>,
+                    Option<f64>,
                     Option<i64>,
                     Option<f64>,
                     Option<String>,
@@ -623,6 +645,8 @@ pub fn get_polygon_data(
                 divy,
                 frequency,
                 dgr,
+                dgr5y,
+                dgr3y,
                 dgr1y,
                 years_of_growth,
                 payout_rate,

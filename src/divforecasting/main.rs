@@ -339,7 +339,7 @@ fn forecast_dividend_stocks(
                     }
                     None => {
 
-                        let (share_price, _, divy, frequency,  dgr, _,_, _, _) =
+                        let (share_price, _, divy, frequency,  dgr, _,_,_,_, _, _) =
                             investments_forecasting::get_polygon_data(&name).expect("Error: unable to get Data from polygon IO for forecasting");
                         num_capitalizations = frequency.expect("Cannot forecast dividend gains as there is no dividend data") as u32;
                         let divy = divy.expect("Cannot forecast dividend gains as there is no dividend data");
