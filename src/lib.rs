@@ -1073,8 +1073,9 @@ fn calculate_dgr_ttm(
                                                 end_month: u32,
                                                 start_year: i32,
                                                 end_year: i32|
-     -> Result<f64, &'static str> {
+     -> Result<(f64, u8), &'static str> {
         let mut dividend_sum = 0.0;
+        let mut frequency: u8 = 0;
         div_history.iter().try_for_each(|x| {
             let div_date = NaiveDate::parse_from_str(&x.0, "%Y-%m-%d")
                 .map_err(|_| "Error parsing dividend year")?;
@@ -1085,11 +1086,12 @@ fn calculate_dgr_ttm(
                 || (div_year == start_year && div_month >= start_month)
             {
                 dividend_sum += x.1;
+                frequency += 1;
             }
             Ok::<(), &str>(())
         })?;
 
-        Ok(dividend_sum)
+        Ok((dividend_sum, frequency))
     };
 
     // Starting month is 11 months earlier , so a month that will be in eleven months
@@ -1105,20 +1107,25 @@ fn calculate_dgr_ttm(
         (range_end_month + 13) % 12
     };
 
-    let recent_annualized_dividend = get_annualized_dividend_within_range(
+    let (recent_annualized_dividend, recent_frequency) = get_annualized_dividend_within_range(
         div_history,
         range_start_month,
         range_end_month,
         previous_range_end_year,
         current_range_end_year,
     )?;
-    let previous_annualized_dividend = get_annualized_dividend_within_range(
+    let (previous_annualized_dividend, previous_frequency) = get_annualized_dividend_within_range(
         div_history,
         range_start_month,
         range_end_month,
         not_interested_range_end_year,
         previous_range_end_year,
     )?;
+    if recent_frequency != previous_frequency {
+        log::warn!(
+            "DGR 2Y TTM: Frequency of dividends in recent period ({recent_frequency}) is not equal to previous period ({previous_frequency})"
+        );
+    }
 
     log::info!("Recent TTM annualized dividend: {recent_annualized_dividend}, Previous TTM annualized dividend: {previous_annualized_dividend}");
     if previous_annualized_dividend == 0.0 {
@@ -1307,6 +1314,32 @@ mod tests {
                     .unwrap()
             )),
             Ok(-65.75)
+        );
+
+        // CAG as of 29th of July 2025
+
+        let div_hists: Vec<(String, f64)> = vec![
+            ("2025-05-29".to_string(), 0.35),
+            ("2025-02-27".to_string(), 0.35),
+            ("2024-11-27".to_string(), 0.35),
+            ("2024-08-29".to_string(), 0.35),
+            ("2024-05-30".to_string(), 0.35),
+            ("2024-02-29".to_string(), 0.35),
+            ("2023-11-30".to_string(), 0.35),
+            ("2023-08-31".to_string(), 0.35),
+            ("2023-06-01".to_string(), 0.33),
+            ("2023-03-02".to_string(), 0.33),
+        ];
+        //0.35*4.0 = 1.4
+        //0.35*4.0 + 0.33 = 1.73
+        // DGR: (1.4/1.73 - 1.0)*100.0 =0.0
+        assert_eq!(
+            Ok::<f64, &str>(round2(
+                calculate_dgr_ttm(&div_hists, "2025-06-29")
+                    .unwrap()
+                    .unwrap()
+            )),
+            Ok(-19.08)
         );
 
         // UPS as of 29th of July 2025
