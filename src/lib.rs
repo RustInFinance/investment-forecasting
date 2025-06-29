@@ -294,6 +294,7 @@ async fn get_dividiend_data(
         Option<f64>,
         Option<f64>,
         Option<f64>,
+        Option<f64>,
         Option<i64>,
         Vec<(String, f64)>,
     ),
@@ -334,7 +335,7 @@ async fn get_dividiend_data(
         log::info!("RESPONSE(DIVIDENDS): {maybe_resp:#?}");
         (resp, run) = match should_try_again(maybe_resp, resp) {
             Ok((resp, run)) => (resp, run),
-            Err(_) => return Ok((None, None, None, None,None,None, vec![])),
+            Err(_) => return Ok((None, None, None, None, None, None, None, vec![])),
         };
     }
 
@@ -350,7 +351,7 @@ async fn get_dividiend_data(
                 log::info!("RESPONSE NEXT PAGE (DIVIDENDS): {maybe_resp:#?}");
                 (resp, run) = match should_try_again(maybe_resp, resp) {
                     Ok((resp, run)) => (resp, run),
-                    Err(_) => return Ok((None, None, None, None, None,None, vec![])),
+                    Err(_) => return Ok((None, None, None, None, None, None, None, vec![])),
                 };
             }
             // Here let's attach
@@ -371,6 +372,9 @@ async fn get_dividiend_data(
         Utc::now().year().to_string().as_ref(),
     )?;
     log::info!("Consecutive years of dividend growth: {years_of_growth:?}");
+
+    let current_date = Utc::now();
+    let dgr_1y_ttm = calculate_dgr_ttm(&div_history, &current_date.format("%Y-%m-%d").to_string())?;
 
     let trim_div_history = |div_history: Vec<(String, f64)>,
                             current_year: i32,
@@ -394,7 +398,7 @@ async fn get_dividiend_data(
             .collect::<Vec<_>>()
     };
 
-    let current_year = Utc::now().year();
+    let current_year = current_date.year();
     let div_history = trim_div_history(div_history, current_year, 11);
 
     // Curr Dividend  and corressponding date
@@ -429,7 +433,16 @@ async fn get_dividiend_data(
     log::info!("Current Div: {curr_div:?} {currency:?}, Paid date: {curr_div_date:?}, Average DGR(samples: {}): {dgr:?}, DGR 1Y : {dgr1y:?}",
             div_history.len());
 
-    Ok((curr_div, dgr, dgr5y, dgr3y, dgr1y, years_of_growth, div_history))
+    Ok((
+        curr_div,
+        dgr,
+        dgr5y,
+        dgr3y,
+        dgr1y,
+        dgr_1y_ttm,
+        years_of_growth,
+        div_history,
+    ))
 }
 
 pub fn get_polygon_data(
@@ -440,6 +453,7 @@ pub fn get_polygon_data(
         Option<f64>,
         Option<f64>,
         Option<i64>,
+        Option<f64>,
         Option<f64>,
         Option<f64>,
         Option<f64>,
@@ -460,7 +474,7 @@ pub fn get_polygon_data(
         .build()
         .unwrap()
         .block_on(async {
-            let (curr_div, dgr, dgr5y, dgr3y, dgr1y, years_of_growth, div_history) =
+            let (curr_div, dgr, dgr5y, dgr3y, dgr1y, dgr1y_ttm, years_of_growth, div_history) =
                 get_dividiend_data(&client, &query_params).await?;
 
             let sector_desc = get_company_details(&client, company).await?;
@@ -496,6 +510,7 @@ pub fn get_polygon_data(
                                 Option<f64>,
                                 Option<f64>,
                                 Option<f64>,
+                                Option<f64>,
                                 Option<i64>,
                                 Option<f64>,
                                 Option<String>,
@@ -510,6 +525,7 @@ pub fn get_polygon_data(
                             dgr5y,
                             dgr3y,
                             dgr1y,
+                            dgr1y_ttm,
                             years_of_growth,
                             None,
                             sector_desc,
@@ -540,6 +556,7 @@ pub fn get_polygon_data(
                             Option<f64>,
                             Option<f64>,
                             Option<f64>,
+                            Option<f64>,
                             Option<i64>,
                             Option<f64>,
                             Option<String>,
@@ -554,6 +571,7 @@ pub fn get_polygon_data(
                         dgr5y,
                         dgr3y,
                         dgr1y,
+                        dgr1y_ttm,
                         years_of_growth,
                         None,
                         sector_desc,
@@ -600,6 +618,7 @@ pub fn get_polygon_data(
                                 Option<f64>,
                                 Option<f64>,
                                 Option<f64>,
+                                Option<f64>,
                                 Option<i64>,
                                 Option<f64>,
                                 Option<String>,
@@ -614,6 +633,7 @@ pub fn get_polygon_data(
                             dgr5y,
                             dgr3y,
                             dgr1y,
+                            dgr1y_ttm,
                             years_of_growth,
                             None,
                             sector_desc,
@@ -634,6 +654,7 @@ pub fn get_polygon_data(
                     Option<f64>,
                     Option<f64>,
                     Option<f64>,
+                    Option<f64>,
                     Option<i64>,
                     Option<f64>,
                     Option<String>,
@@ -648,6 +669,7 @@ pub fn get_polygon_data(
                 dgr5y,
                 dgr3y,
                 dgr1y,
+                dgr1y_ttm,
                 years_of_growth,
                 payout_rate,
                 sector_desc,
@@ -1019,25 +1041,25 @@ fn calculate_dgr_ttm(
     div_history: &Vec<(String, f64)>,
     current_date: &str,
 ) -> Result<Option<f64>, &'static str> {
-    let dhiter = div_history.iter();
-
-    let mut average = 0.0;
-
-    if div_history.len() == 0 {
+    if div_history.is_empty() {
         return Ok(None);
     }
 
-    let current_date = NaiveDate::parse_from_str(&current_date,"%Y-%m-%d").map_err(|_| "Error parsing current date ")?;
+    let current_date = NaiveDate::parse_from_str(&current_date, "%Y-%m-%d")
+        .map_err(|_| "Error parsing current date ")?;
     let current_year = current_date.year();
     let current_month = current_date.month();
 
     // twelve trailing months are not including current month (it is still running)
     // So if this is January (current month) then we will consider december of previous year
     // as most recent month to include dividend for
-    let (range_end_month, current_range_end_year ) = if current_month > 1 { (current_month - 1,current_year) } else { (12, current_year-1)};
+    let (range_end_month, current_range_end_year) = if current_month > 1 {
+        (current_month - 1, current_year)
+    } else {
+        (12, current_year - 1)
+    };
     let previous_range_end_year = current_range_end_year - 1;
     let not_interested_range_end_year = current_range_end_year - 2;
-
 
     // Get year and month of last dividend
     // maybe I should take current date (month and year)
@@ -1047,8 +1069,11 @@ fn calculate_dgr_ttm(
     // And then I do the same for similar period but year earlier
 
     let get_annualized_dividend_within_range = |div_history: &Vec<(String, f64)>,
-            start_month : u32, end_month : u32, start_year : i32, end_year : i32| -> Result<f64,&'static str> {
-
+                                                start_month: u32,
+                                                end_month: u32,
+                                                start_year: i32,
+                                                end_year: i32|
+     -> Result<f64, &'static str> {
         let mut dividend_sum = 0.0;
         div_history.iter().try_for_each(|x| {
             let div_date = NaiveDate::parse_from_str(&x.0, "%Y-%m-%d")
@@ -1056,9 +1081,10 @@ fn calculate_dgr_ttm(
             let div_year = div_date.year();
             let div_month = div_date.month();
             // sum all dividends which dates fit within range
-            if (div_year == end_year && div_month <= end_month) ||
-               (div_year == start_year && div_month >= start_month) {
-                   dividend_sum+=x.1;
+            if (div_year == end_year && div_month <= end_month)
+                || (div_year == start_year && div_month >= start_month)
+            {
+                dividend_sum += x.1;
             }
             Ok::<(), &str>(())
         })?;
@@ -1067,35 +1093,39 @@ fn calculate_dgr_ttm(
     };
 
     // Starting month is 11 months earlier , so a month that will be in eleven months
-    // So I can add 11 do module 12 and add 1 e.g. 
-    // EndMonth : 12 then (12 + 13 ) % 12 =  1  ,12 - 11 = 1 
-    // EndMonth : 11 then 12 
-    // EndMonth : 10 then (10 + 13 ) % 12 =  11  ,10 - 11 = 11 
-    // EndMonth : 5 then (5 + 13 ) % 12 =  6  ,5 - 11 = 6 
+    // So I can add 11 do module 12 and add 1 e.g.
+    // EndMonth : 12 then (12 + 13 ) % 12 =  1  ,12 - 11 = 1
+    // EndMonth : 11 then 12
+    // EndMonth : 10 then (10 + 13 ) % 12 =  11  ,10 - 11 = 11
+    // EndMonth : 5 then (5 + 13 ) % 12 =  6  ,5 - 11 = 6
     // EndMonth : 1 then (1 + 13 ) % 12  = 2   , 1 - 11 = 2
     let range_start_month = if range_end_month == 11 {
         12
     } else {
         (range_end_month + 13) % 12
     };
-    
-    let recent_annualized_dividend = get_annualized_dividend_within_range(div_history,
+
+    let recent_annualized_dividend = get_annualized_dividend_within_range(
+        div_history,
         range_start_month,
         range_end_month,
         previous_range_end_year,
-        current_range_end_year)?;
-    let previous_annualized_dividend = get_annualized_dividend_within_range(div_history,
+        current_range_end_year,
+    )?;
+    let previous_annualized_dividend = get_annualized_dividend_within_range(
+        div_history,
         range_start_month,
         range_end_month,
         not_interested_range_end_year,
-        previous_range_end_year)?;
+        previous_range_end_year,
+    )?;
 
     log::info!("Recent TTM annualized dividend: {recent_annualized_dividend}, Previous TTM annualized dividend: {previous_annualized_dividend}");
     if previous_annualized_dividend == 0.0 {
-        return Ok(None)
+        return Ok(None);
     }
 
-    let dgr_ttm  = (recent_annualized_dividend / previous_annualized_dividend - 1.0 ) * 100.0;
+    let dgr_ttm = (recent_annualized_dividend / previous_annualized_dividend - 1.0) * 100.0;
 
     log::info!("DGR TTM : {dgr_ttm}");
 
@@ -1224,7 +1254,7 @@ mod tests {
             ("2023-07-01".to_owned(), 0.5),
             ("2023-11-01".to_owned(), 0.5),
         ];
-        assert_eq!(calculate_dgr_ttm(&div_hists,"2023-12-01"), Ok(None));
+        assert_eq!(calculate_dgr_ttm(&div_hists, "2023-12-01"), Ok(None));
 
         let div_hists: Vec<(String, f64)> = vec![
             ("2023-01-01".to_owned(), 0.5),
@@ -1236,7 +1266,10 @@ mod tests {
             ("2022-07-01".to_owned(), 0.5),
             ("2022-11-01".to_owned(), 0.5),
         ];
-        assert_eq!(calculate_dgr_ttm(&div_hists, "2024-12-01"), Ok(Some(-100.0)));
+        assert_eq!(
+            calculate_dgr_ttm(&div_hists, "2024-12-01"),
+            Ok(Some(-100.0))
+        );
 
         let div_hists: Vec<(String, f64)> = vec![
             ("2022-01-01".to_owned(), 0.1),
@@ -1264,13 +1297,53 @@ mod tests {
             ("2024-03-01".to_owned(), 0.125),
         ];
 
-
         //0.125*4.0 = 0.5
         //0.365*4.0 = 1.46
         // DGR: (0.5/1.46 - 1.0)*100.0 = -65.753425
         assert_eq!(
-            Ok::<f64, &str>(round2(calculate_dgr_ttm(&div_hists, "2024-04-01").unwrap().unwrap())),
+            Ok::<f64, &str>(round2(
+                calculate_dgr_ttm(&div_hists, "2024-04-01")
+                    .unwrap()
+                    .unwrap()
+            )),
             Ok(-65.75)
+        );
+
+        // UPS as of 29th of July 2025
+
+        let div_hists: Vec<(String, f64)> = vec![
+            ("2025-06-05".to_owned(), 1.64),
+            ("2025-03-06".to_owned(), 1.64),
+            ("2024-12-05".to_owned(), 1.63),
+            ("2024-09-05".to_owned(), 1.63),
+            ("2024-05-30".to_owned(), 1.63),
+            ("2024-03-08".to_owned(), 1.63),
+            ("2023-11-30".to_owned(), 1.62),
+            ("2023-08-31".to_owned(), 1.62),
+            ("2023-06-01".to_owned(), 1.62),
+            ("2023-03-10".to_owned(), 1.62),
+        ];
+        //1.64*2.0  + 1.63*2.0  = 6.54
+        //1.63*2.0  + 1.62*2.0  = 6.5
+        // DGR: (6.54/6.5 - 1.0)*100.0 = 0.615385
+        assert_eq!(
+            Ok::<f64, &str>(round2(
+                calculate_dgr_ttm(&div_hists, "2025-07-29")
+                    .unwrap()
+                    .unwrap()
+            )),
+            Ok(0.62)
+        );
+        //1.64*1.0  + 1.63*2.0  = 4.9
+        //1.63*2.0  + 1.62*3.0  = 8.12
+        // DGR: (4.9/8.12 - 1.0)*100.0 = -39.655172
+        assert_eq!(
+            Ok::<f64, &str>(round2(
+                calculate_dgr_ttm(&div_hists, "2025-06-29")
+                    .unwrap()
+                    .unwrap()
+            )),
+            Ok(-39.66)
         );
 
         // ABEV as of 29th of June 2025
@@ -1341,10 +1414,14 @@ mod tests {
         ];
 
         //0.02*2.0 + 0.07 + 0.4= 0.15
-        // 0.13 
+        // 0.13
         // DGR: (0.15/0.13 - 1.0)*100.0 = 15.384615
         assert_eq!(
-            Ok::<f64, &str>(round2(calculate_dgr_ttm(&div_hists, "2025-08-01").unwrap().unwrap())),
+            Ok::<f64, &str>(round2(
+                calculate_dgr_ttm(&div_hists, "2025-08-01")
+                    .unwrap()
+                    .unwrap()
+            )),
             Ok(15.38)
         );
 
