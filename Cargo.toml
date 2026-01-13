@@ -11,6 +11,10 @@ path = "src/divanalysis/main.rs"
 name = "divforecasting"
 path = "src/divforecasting/main.rs"
 
+[[bin]]
+name = "divportfolio"
+path = "src/divportfolio/main.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
