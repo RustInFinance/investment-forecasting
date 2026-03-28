@@ -154,6 +154,18 @@ fn print_summary(data: &[Stock]) {
         )
     }
 
+    let mut exchange_rate_usd_pln = 0.0;
+    let provider = yahoo::YahooConnector::new().unwrap();
+    match provider.get_latest_quotes("USDPLN=X", "1d") {
+        Ok(response) => {
+            if let Ok(quotes) = response.quotes() {
+                println!("Kurs USD/PLN: {:?}", quotes.last().unwrap().close);
+                exchange_rate_usd_pln = quotes.last().unwrap().close;
+            }
+        }
+        Err(e) => eprintln!("Error: {:?}", e),
+    }
+
     if total_investement_eur > 0.0 && total_investement > 0.0 {
         // Get current USD exchange rate and EUR exchange rate
         let provider = yahoo::YahooConnector::new().unwrap();
@@ -174,6 +186,10 @@ fn print_summary(data: &[Stock]) {
                     println!(
                         "Combined portfolio annual income [$]: {:.2}",
                         combined_annual_dividend
+                    );
+                    println!(
+                        "Combined portfolio annual income [PLN]: {:.2}",
+                        combined_annual_dividend * exchange_rate_usd_pln
                     );
                 }
             }
