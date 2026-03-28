@@ -1,10 +1,10 @@
 use clap::Parser;
 use polars::prelude::*;
+use std::collections::BTreeMap;
 use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
 
-// TODO: check  YQuoteSummary if yahoo finance api can get us dividend rate
-// // TODO: wazone srednia yield
+// // TODO: Print dividend data and then add in summary the dividend per month
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Exchange {
     EUR(String),
@@ -50,6 +50,52 @@ impl Currency {
             Currency::USD(val) => format!("{:.2} USD", val),
         }
     }
+}
+
+fn print_monthly_dividends_distribution(stocks: &[Stock]) {
+    println!("Dividend distribution per month:");
+    let mut monthly_distribution = BTreeMap::new();
+
+    // USD / PLN
+    let mut exchange_rate_usd_pln = 0.0;
+    let provider = yahoo::YahooConnector::new().unwrap();
+    match provider.get_latest_quotes("USDPLN=X", "1d") {
+        Ok(response) => {
+            if let Ok(quotes) = response.quotes() {
+                println!("Kurs USD/PLN: {:?}", quotes.last().unwrap().close);
+                exchange_rate_usd_pln = quotes.last().unwrap().close;
+            }
+        }
+        Err(e) => eprintln!("Error: {:?}", e),
+    }
+    // EUR / PLN
+    let mut exchange_rate_eur_pln = 0.0;
+    let provider = yahoo::YahooConnector::new().unwrap();
+    match provider.get_latest_quotes("EURPLN=X", "1d") {
+        Ok(response) => {
+            if let Ok(quotes) = response.quotes() {
+                println!("Kurs USD/PLN: {:?}", quotes.last().unwrap().close);
+                exchange_rate_eur_pln = quotes.last().unwrap().close;
+            }
+        }
+        Err(e) => eprintln!("Error: {:?}", e),
+    }
+
+    // convert all dividends into PLN
+    for stock in stocks {
+        for (month, amount) in &stock.monthly_dividends {
+            let amount_pln = match stock.current_value {
+                Currency::USD(_) => amount * exchange_rate_usd_pln,
+                Currency::EUR(_) => amount * exchange_rate_eur_pln,
+                Currency::PLN(_) => *amount,
+            };
+            *monthly_distribution.entry(month.clone()).or_insert(0.0) += amount_pln;
+        }
+    }
+
+    monthly_distribution.iter().for_each(|(m, v)| {
+        println!("{m} : {v:0.2} PLN ");
+    });
 }
 
 fn print_summary(data: &[Stock]) {
@@ -131,7 +177,7 @@ fn print_summary(data: &[Stock]) {
                     );
                 }
             }
-            Err(e) => eprintln!("Błąd: {:?}", e),
+            Err(e) => eprintln!("Error: {:?}", e),
         }
     }
 }
@@ -184,6 +230,7 @@ struct Stock<'a> {
     current_yield: f64,
     yield_on_invested: f64,
     annualized_dividend: Currency,
+    monthly_dividends: BTreeMap<String, f64>,
 }
 
 impl<'a> Stock<'a> {
@@ -192,6 +239,7 @@ impl<'a> Stock<'a> {
         invested_value: Currency,
         current_value: Currency,
         current_yield: f64,
+        monthly_dividends: BTreeMap<String, f64>,
     ) -> Self {
         // compute yield on invested
         Self {
@@ -205,6 +253,7 @@ impl<'a> Stock<'a> {
                 current_yield,
             ),
             annualized_dividend: current_value.derive(current_yield * current_value.value()),
+            monthly_dividends,
         }
     }
 }
@@ -292,7 +341,65 @@ fn get_data(
 
     let value = investement.derive(response.last_quote()?.close * num_shares);
 
-    Ok(Stock::new(symbol, investement, value, dividend_yield))
+    let monthly_dividends = get_dividend_history(symbol, num_shares)?;
+
+    Ok(Stock::new(
+        symbol,
+        investement,
+        value,
+        dividend_yield,
+        monthly_dividends,
+    ))
+}
+
+fn get_dividend_history(
+    symbol: &str,
+    num_shares: f64,
+) -> Result<BTreeMap<String, f64>, Box<dyn std::error::Error>> {
+    let provider = yahoo::YahooConnector::new()?;
+
+    // Get scope of for dividends (previous year)
+    let now = OffsetDateTime::now_utc();
+    let prev_year = now.year() - 1;
+
+    let start = time::Date::from_calendar_date(prev_year, time::Month::January, 1)?
+        .with_hms(0, 0, 0)?
+        .assume_utc();
+    let end = time::Date::from_calendar_date(prev_year, time::Month::December, 31)?
+        .with_hms(23, 59, 59)?
+        .assume_utc();
+
+    let resp = provider.get_quote_history(symbol, start, end)?;
+
+    // Zbierz dywidendy per miesiac
+    let mut monthly_dividends: BTreeMap<String, f64> = BTreeMap::new();
+
+    if let Ok(quotes) = resp.quotes() {
+        // quotes to ceny — szukamy eventow dywidendowych
+        // Yahoo finance zwraca dividendy w polu adjclose vs close diff
+        // Ale lepiej uzyc get_quote_history i sprawdzic eventy
+    }
+
+    // Probujemy wyciagnac dywidendy z odpowiedzi (pole events.dividends w Yahoo API)
+    // yahoo_finance_api parsuje to w strukt YResponse
+    if let Some(result) = resp.chart.result.as_ref() {
+        for r in result {
+            if let Some(events) = &r.events {
+                if let Some(dividends) = &events.dividends {
+                    for (_timestamp_str, div) in dividends {
+                        let dt = OffsetDateTime::from_unix_timestamp(div.date as i64)?;
+                        let month_key = format!("{:02}", dt.month() as u8);
+                        let dividend_income = div.amount * num_shares;
+                        *monthly_dividends.entry(month_key).or_insert(0.0) += dividend_income;
+                    }
+                }
+            }
+        }
+    }
+
+    //    println!("Monthly dividends for {}: {:?}", symbol, monthly_dividends);
+
+    Ok(monthly_dividends)
 }
 
 fn main() -> Result<(), String> {
@@ -308,51 +415,72 @@ fn main() -> Result<(), String> {
         //Stock::new("ABEV", Currency::USD(121+11.91),  Currency::USD(240.84), 0.0789),
         get_data(
             "ABEV",
-            Currency::USD(121.0 + 11.20 + 80.0 + 11.91),
+            Currency::USD(121.0 + 11.20 + 80.0 + 1.91),
             82.09,
             None,
         )
         .unwrap(),
         get_data(
             "BBY",
-            Currency::USD(1000.0 + 2.0 + 3.62 + 94.73),
+            Currency::USD(1000.0 + 92.0 + 93.62 + 94.73),
             11.63,
             None,
         )
         .unwrap(),
         get_data("GOOGL", Currency::USD(58.68 + 60.0), 0.81, None).unwrap(),
-        get_data("GSL", Currency::USD(260.0 + 4.36), 7.11, None).unwrap(),
+        get_data("GSL", Currency::USD(276.0 + 44.36 + 2.92), 7.19, None).unwrap(),
         get_data("KO", Currency::USD(23.06 + 70.0 + 5.88 + 5.92), 1.75, None).unwrap(),
-        get_data("LX", Currency::USD(30.49), 1.9, None).unwrap(),
-        get_data("SM", Currency::USD(2.74), 1.0, None).unwrap(),
-        get_data("TGT", Currency::USD(8.78 + 1.0 + 8.88), 0.25, None).unwrap(),
-        get_data("VZ", Currency::USD(1.85), 0.09, None).unwrap(),
+        get_data("LX", Currency::USD(3.49 + 9.72), 1.9, None).unwrap(),
+        get_data("SM", Currency::USD(27.74), 2.0, None).unwrap(),
+        get_data(
+            "TGT",
+            Currency::USD(26.9 + 744.63 + 2.0 + 8.78 + 1.0 + 8.88),
+            9.25,
+            None,
+        )
+        .unwrap(),
+        //Stock::new("VZ",   Currency::USD(19.85),    Currency::USD(24.98),   0.0671),
+        get_data("VZ", Currency::USD(19.85), 0.49, None).unwrap(),
     ];
 
     print_data_frame(&ania);
 
     let jacek = vec![
-        //Stock::new("AHOG", Currency::EUR(80.74),  Currency::EUR(69.21), 0.0347),
-        get_data("AHOG.DE", Currency::USD(80.74), 1.11, None).unwrap(),
-        get_data("BMO", Currency::USD(215.0), 2.23, None).unwrap(),
-        get_data("CNQ", Currency::USD(30.0 + 98.51), 1.65, None).unwrap(),
-        get_data("CVX", Currency::USD(100.0), 1.43, None).unwrap(),
-        get_data("EIX", Currency::USD(20.0), 0.23, None).unwrap(),
-        get_data("EPR", Currency::USD(500.0 + 5340.12), 98.24, None).unwrap(),
+        get_data("AHOG.DE", Currency::EUR(5980.74), 179.11, None).unwrap(),
+        get_data("BMO", Currency::USD(2100.0), 28.23, None).unwrap(),
+        get_data("CNQ", Currency::USD(300.0 + 298.51), 138.65, None).unwrap(),
+        get_data("CVX", Currency::USD(100.0), 6.43, None).unwrap(),
+        get_data("EIX", Currency::USD(200.0), 6.23, None).unwrap(),
+        get_data(
+            "EPR",
+            Currency::USD(500.0 + 500.0 + 987.80 + 496.86 + 5150.48 + 100.0 + 100.0 + 5340.12),
+            79.24,
+            None,
+        )
+        .unwrap(),
         get_data("NVS", Currency::USD(201.0), 1.89, None).unwrap(),
         get_data("O", Currency::USD(336.99), 5.2, None).unwrap(),
         get_data("SNY", Currency::USD(200.0), 4.02, None).unwrap(),
-        get_data("TW10.F", Currency::EUR(20.66 + 0.52), 1.02, None).unwrap(),
-        get_data("TRN.MI", Currency::EUR(9.29), 1.86, None).unwrap(),
-        get_data("UPS", Currency::USD(10.0), 1.02, None).unwrap(),
-        get_data("VVD.DE", Currency::EUR(5.23), 1.7, None).unwrap(),
+        get_data("TW10.F", Currency::EUR(200.66 + 52.0), 12.02, None).unwrap(),
+        get_data("TRN.MI", Currency::EUR(92.29), 18.86, None).unwrap(),
+        get_data(
+            "UPS",
+            Currency::USD(1999.99 + 200.0 + 1000.0 + 1000.0),
+            15.02,
+            None,
+        )
+        .unwrap(),
+        get_data("VVD.DE", Currency::EUR(569.23), 15.77, None).unwrap(),
+        //    Stock::new("DE000A289XJ2",Currency::USD(2594.37),   Currency::EUR(2627.66),  0.0501),
     ];
     print_data_frame(&jacek);
 
     println!("ANIA:");
+    print_monthly_dividends_distribution(&ania);
     print_summary(&ania);
 
     println!("JACEK:");
+    print_monthly_dividends_distribution(&jacek);
     print_summary(&jacek);
 
     // Compute summary in PLN
