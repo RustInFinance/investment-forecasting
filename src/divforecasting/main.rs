@@ -338,9 +338,12 @@ fn forecast_dividend_stocks(
                         (price, dy, dyg)
                     }
                     None => {
-
                         let (share_price, _, divy, frequency,  dgr, _,_,_,_,_, _, _) =
-                            investments_forecasting::get_polygon_data(&name).expect("Error: unable to get Data from polygon IO for forecasting");
+                        if std::env::var("POLYGON_AUTH_KEY").is_ok() { 
+                            investments_forecasting::get_polygon_data(&name).expect("Error: unable to get Data from polygon IO for forecasting")
+                        } else {
+                            investments_forecasting::get_yahoo_data(&name).expect("Error: unable to get Data from yahoo finance for forecasting")
+                        };
                         num_capitalizations = frequency.expect("Cannot forecast dividend gains as there is no dividend data") as u32;
                         let divy = divy.expect("Cannot forecast dividend gains as there is no dividend data");
                         let dgr = dgr.expect("Cannot forecast dividend gains as there is no dividend data");

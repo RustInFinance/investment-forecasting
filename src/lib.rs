@@ -1,8 +1,10 @@
 use calamine::{Reader, Xlsx};
 use polars::prelude::*;
 use std::fmt;
+use yahoo_finance_api as yahoo;
 
 use chrono::prelude::*;
+use time::OffsetDateTime;
 
 use polygon_client::rest::RESTClient;
 use std::collections::BTreeMap;
@@ -284,6 +286,146 @@ async fn get_company_details(
     Ok(resp.results.sic_description)
 }
 
+fn get_yahoo_dividiend_data(
+    provider: &yahoo::YahooConnector,
+    company: &str,
+    currency: &str,
+) -> Result<
+    (
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+        Option<i64>,
+        Vec<(String, f64)>,
+    ),
+    &'static str,
+> {
+    // Get scope of for dividends (previous year)
+    let now = OffsetDateTime::now_utc();
+    let prev_year = now.year() - 1;
+
+    let start = time::Date::from_calendar_date(prev_year - 20, time::Month::January, 1)
+        .map_err(|_| "Cannot set date")?
+        .with_hms(0, 0, 0)
+        .map_err(|_| "Cannot set date")?
+        .assume_utc();
+    let end = time::Date::from_calendar_date(prev_year, time::Month::December, 31)
+        .map_err(|_| "Cannot set date")?
+        .with_hms(23, 59, 59)
+        .map_err(|_| "Cannot set date")?
+        .assume_utc();
+
+    let resp = provider
+        .get_quote_history(company, start, end)
+        .map_err(|_| "Cannot get dividends history")?;
+    let mut div_history: Vec<(String, f64)> = vec![];
+
+    if let Some(result) = resp.chart.result.as_ref() {
+        for r in result {
+            if let Some(events) = &r.events {
+                if let Some(dividends) = &events.dividends {
+                    for (_timestamp_str, div) in dividends {
+                        let dt = OffsetDateTime::from_unix_timestamp(div.date as i64)
+                            .map_err(|_| "Cannot set date")?;
+                        let exdiv_date =
+                            format!("{}-{:02}-{:02}", dt.year(), dt.month() as u8, dt.day());
+                        div_history.push((exdiv_date, div.amount));
+                    }
+                }
+            }
+        }
+    }
+
+    div_history.sort_by(|a, b| {
+        let a_date = NaiveDate::parse_from_str(&a.0, "%Y-%m-%d").expect("unable to parse date");
+        let b_date = NaiveDate::parse_from_str(&b.0, "%Y-%m-%d").expect("unable to parse date");
+        a_date.cmp(&b_date)
+    });
+    log::info!("Ordered dividends: {div_history:#?}");
+    let years_of_growth = calculate_consecutive_years_of_growth(
+        &div_history,
+        Utc::now().year().to_string().as_ref(),
+    )?;
+    log::info!("Consecutive years of dividend growth: {years_of_growth:?}");
+    let current_date = Utc::now();
+    let dgr_1y_ttm = calculate_dgr_ttm(&div_history, &current_date.format("%Y-%m-%d").to_string())?;
+
+    let trim_div_history = |div_history: Vec<(String, f64)>,
+                            current_year: i32,
+                            num_years_of_interest: i32|
+     -> Vec<(String, f64)> {
+        div_history
+            .into_iter()
+            .filter(|x| {
+                let x_date_year = NaiveDate::parse_from_str(&x.0, "%Y-%m-%d")
+                    .expect("unable to parse date")
+                    .year();
+                // Current year data is not used
+                if x_date_year == current_year {
+                    false
+                } else if (current_year - x_date_year) <= num_years_of_interest {
+                    true
+                } else {
+                    false
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let current_year = current_date.year();
+    let div_history = trim_div_history(div_history, current_year, 11);
+
+    // Curr Dividend  and corressponding date
+    let (curr_div, curr_div_date) = match div_history.iter().rev().next() {
+        Some((pay_date, cash_amount)) => (
+            Some(*cash_amount),
+            Some(
+                NaiveDate::parse_from_str(&pay_date, "%Y-%m-%d").expect("Wrong payout date format"),
+            ),
+        ),
+        None => {
+            log::info!("No dividend Data!");
+            (None, None)
+        }
+    };
+
+    let shorter_div_history = trim_div_history(div_history.clone(), current_year, 6);
+    let even_shorter_div_history = trim_div_history(div_history.clone(), current_year, 4);
+    let shortest_div_history = trim_div_history(div_history.clone(), current_year, 2);
+    log::info!("Shorted dividend history: {even_shorter_div_history:#?}");
+    let current_year = current_year.to_string();
+    let dgr = calculate_dgr(&div_history, current_year.as_ref())?;
+    let dgr5y = calculate_dgr(&shorter_div_history, current_year.as_ref())?;
+    let dgr3y = calculate_dgr(&even_shorter_div_history, current_year.as_ref())?;
+    let dgr1y = calculate_dgr(&shortest_div_history, current_year.as_ref())?;
+
+    log::info!("Current Div: {curr_div:?} {currency:?}, Paid date: {curr_div_date:?}, Average DGR(samples: {}): {dgr:?}, DGR 1Y : {dgr1y:?}",
+            div_history.len());
+
+    Ok((
+        curr_div,
+        dgr,
+        dgr5y,
+        dgr3y,
+        dgr1y,
+        dgr_1y_ttm,
+        years_of_growth,
+        div_history,
+    ))
+
+    //        curr_div,
+    //        dgr,
+    //        dgr5y,
+    //        dgr3y,
+    //       dgr1y,
+    //      dgr_1y_ttm,
+    //     years_of_growth,
+    //    div_history,
+}
+
 async fn get_dividiend_data(
     client: &RESTClient,
     query_params: &HashMap<&str, &str>,
@@ -442,6 +584,113 @@ async fn get_dividiend_data(
         dgr_1y_ttm,
         years_of_growth,
         div_history,
+    ))
+}
+pub fn get_yahoo_data(
+    company: &str,
+) -> Result<
+    (
+        f64,
+        Option<f64>,
+        Option<f64>,
+        Option<i64>,
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+        Option<i64>,
+        Option<f64>,
+        Option<String>,
+    ),
+    &'static str,
+> {
+    // create provider
+    let mut provider =
+        yahoo::YahooConnector::new().map_err(|_| "Could not create Yahoo provider")?;
+
+    // stock price
+    let response = provider.get_latest_quotes(company, "1d").map_err(|e| {
+        log::error!("{e}");
+        "Could not get Yahoo response"
+    })?;
+    let share_price = match response.last_quote() {
+        Ok(quote) => quote.close,
+        Err(e) => return Err("Error: could not get stock price"),
+    };
+
+    // Pobieranie metadanych (zawierają dodatkowe informacje o akcji)
+    let currency = match response.metadata() {
+        Ok(metadata) => {
+            if let Some(currency) = &metadata.currency {
+                log::info!("Currency: {}", currency);
+                currency.clone()
+            } else {
+                log::warn!("⚠️  No currency information available for stock");
+                "Unknown".to_string()
+            }
+        }
+        Err(e) => {
+            return Err("⚠️  Error getting metadata of stock: ");
+        }
+    };
+    // dividend yield
+    let response_info = provider
+        .get_ticker_info(company)
+        .map_err(|e| "Could not get Yahoo ticker info: {e}")?;
+    let mut yield_value = 0.0;
+    let mut payout_ratio = 0.0;
+    match response_info.quote_summary {
+        Some(info) => {
+            if let Some(summary) = info.result {
+                summary.iter().for_each(|item| {
+                    if let Some(dividend_yield) =
+                        item.summary_detail.as_ref().and_then(|d| d.dividend_yield)
+                    {
+                        // println!("Dividend yeild from metadata : {:.2}%", dividend_yield);
+                        yield_value = dividend_yield * 100.0;
+                    }
+                    if let Some(pr) = item.summary_detail.as_ref().and_then(|d| d.payout_ratio) {
+                        // println!("Dividend yeild from metadata : {:.2}%", dividend_yield);
+                        payout_ratio = pr * 100.0;
+                    }
+                });
+            } else {
+                println!("⚠️ No info about stock");
+            }
+        }
+        None => {
+            println!("⚠️ No info about stock");
+        }
+    }
+
+    // get dividend data
+    let (curr_div, dgr, dgr5y, dgr3y, dgr1y, dgr1y_ttm, years_of_growth, div_history) =
+        get_yahoo_dividiend_data(&provider, &company, currency.as_ref())?;
+
+    let (annuallized_div, frequency) =
+        match calculate_annualized_div(&div_history, (Utc::now().year() - 1).to_string().as_ref())?
+        {
+            Some((annuallized_div, frequency)) => (Some(annuallized_div), Some(frequency)),
+            None => (None, None),
+        };
+    log::info!("Annualized dividend: {annuallized_div:?}, annual frequency: {frequency:?}");
+
+    //sector_desc,
+
+    Ok((
+        share_price,
+        curr_div,
+        Some(yield_value),
+        frequency,
+        dgr,
+        dgr5y,
+        dgr3y,
+        dgr1y,
+        dgr1y_ttm,
+        years_of_growth,
+        Some(payout_ratio),
+        None,
     ))
 }
 

@@ -431,7 +431,7 @@ fn main() -> Result<(), String> {
         //Stock::new("ABEV", Currency::USD(121+11.91),  Currency::USD(240.84), 0.0789),
         get_data(
             "ABEV",
-            Currency::USD(121.0 + 11.20 + 80.0 + 1.91),
+            Currency::USD(120.0 + 11.20 + 800.0 + 11.91),
             82.09,
             None,
         )
@@ -444,49 +444,55 @@ fn main() -> Result<(), String> {
         )
         .unwrap(),
         get_data("GOOGL", Currency::USD(58.68 + 60.0), 0.81, None).unwrap(),
-        get_data("GSL", Currency::USD(276.0 + 44.36 + 2.92), 7.19, None).unwrap(),
-        get_data("KO", Currency::USD(23.06 + 70.0 + 5.88 + 5.92), 1.75, None).unwrap(),
-        get_data("LX", Currency::USD(3.49 + 9.72), 1.9, None).unwrap(),
-        get_data("SM", Currency::USD(27.74), 2.0, None).unwrap(),
+        get_data("GSL", Currency::USD(20.0 + 44.36 + 2.92), 2.19, None).unwrap(),
+        get_data(
+            "KO",
+            Currency::USD(263.06 + 70.0 + 5.88 + 5.92),
+            1.75,
+            None,
+        )
+        .unwrap(),
+        get_data("LX", Currency::USD(30.49 + 29.2), 1.9, None).unwrap(),
+        get_data("SM", Currency::USD(272.74), 12.0, None).unwrap(),
         get_data(
             "TGT",
-            Currency::USD(26.9 + 744.63 + 2.0 + 8.78 + 1.0 + 8.88),
-            9.25,
+            Currency::USD(26.9 + 74.63 + 2.0 + 8.78 + 1.0 + 8.88),
+            0.25,
             None,
         )
         .unwrap(),
         //Stock::new("VZ",   Currency::USD(19.85),    Currency::USD(24.98),   0.0671),
-        get_data("VZ", Currency::USD(19.85), 0.49, None).unwrap(),
+        get_data("VZ", Currency::USD(1.85 + 6.19), 0.01, None).unwrap(),
     ];
 
     print_data_frame(&ania);
 
     let jacek = vec![
-        get_data("AHOG.DE", Currency::EUR(5980.74), 179.11, None).unwrap(),
-        get_data("BMO", Currency::USD(2100.0), 28.23, None).unwrap(),
-        get_data("CNQ", Currency::USD(300.0 + 298.51), 138.65, None).unwrap(),
-        get_data("CVX", Currency::USD(100.0), 6.43, None).unwrap(),
-        get_data("EIX", Currency::USD(200.0), 6.23, None).unwrap(),
+        get_data("AHOG.DE", Currency::EUR(50.74), 1.11, None).unwrap(),
+        get_data("BMO", Currency::USD(200.0), 8.23, None).unwrap(),
+        get_data("CNQ", Currency::USD(30.0 + 98.51), 1.65, None).unwrap(),
+        get_data("CVX", Currency::USD(10.0), 6.43, None).unwrap(),
+        get_data("EIX", Currency::USD(20.0), 6.23, None).unwrap(),
         get_data(
             "EPR",
-            Currency::USD(500.0 + 500.0 + 987.80 + 496.86 + 5150.48 + 100.0 + 100.0 + 5340.12),
-            79.24,
+            Currency::USD(500.0 + 500.0 + 987.80 + 496.86 + 5150.48 + 10000.0 + 10.0 + 5340.12),
+            798.24,
             None,
         )
         .unwrap(),
-        get_data("NVS", Currency::USD(201.0), 1.89, None).unwrap(),
-        get_data("O", Currency::USD(336.99), 5.2, None).unwrap(),
-        get_data("SNY", Currency::USD(200.0), 4.02, None).unwrap(),
-        get_data("TW10.F", Currency::EUR(200.66 + 52.0), 12.02, None).unwrap(),
-        get_data("TRN.MI", Currency::EUR(92.29), 18.86, None).unwrap(),
+        get_data("NVS", Currency::USD(20.0), 1.89, None).unwrap(),
+        get_data("O", Currency::USD(330.99 + 2674.66), 4.05, None).unwrap(),
+        get_data("SNY", Currency::USD(2000.0), 4.02, None).unwrap(),
+        get_data("TW10.F", Currency::EUR(2010.66 + 52.0), 132.02, None).unwrap(),
+        get_data("TRN.MI", Currency::EUR(921.29), 18.86, None).unwrap(),
         get_data(
             "UPS",
-            Currency::USD(1999.99 + 200.0 + 1000.0 + 1000.0),
+            Currency::USD(19999.99 + 200.0 + 1000.0 + 00.0),
             15.02,
             None,
         )
         .unwrap(),
-        get_data("VVD.DE", Currency::EUR(569.23), 15.77, None).unwrap(),
+        get_data("VVD.DE", Currency::EUR(566.23 + 323.69), 30.02, None).unwrap(),
         //    Stock::new("DE000A289XJ2",Currency::USD(2594.37),   Currency::EUR(2627.66),  0.0501),
     ];
     print_data_frame(&jacek);

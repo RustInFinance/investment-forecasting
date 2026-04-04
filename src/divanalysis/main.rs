@@ -201,10 +201,7 @@ fn configure_dataframes_format() {
     }
 }
 
-fn get_polygon_companies_data(
-    companies: &[String],
-    database: Option<String>,
-) -> Result<(), &'static str> {
+fn get_companies_data(companies: &[String], database: Option<String>) -> Result<(), &'static str> {
     let mut symbols: Vec<&str> = vec![];
     let mut share_prices: Vec<f64> = vec![];
     let mut curr_divs: Vec<Option<f64>> = vec![];
@@ -286,7 +283,13 @@ fn get_polygon_companies_data(
             years_of_growth,
             payout_ratio,
             sector_desc,
-        ) = investments_forecasting::get_polygon_data(&symbol)?;
+        ) = if std::env::var("POLYGON_AUTH_KEY").is_ok() {
+            investments_forecasting::get_polygon_data(symbol)
+                .expect("Error: unable to get Data from polygon IO for forecasting")
+        } else {
+            investments_forecasting::get_yahoo_data(symbol)
+                .expect("Error: unable to get Data from yahoo finance for forecasting")
+        };
 
         share_prices.push(share_price);
         curr_divs.push(curr_div);
@@ -482,7 +485,7 @@ fn main() -> Result<(), &'static str> {
                     companies.into_iter().for_each(|(s, _)| {
                         symbols.push(s);
                     });
-                    get_polygon_companies_data(&symbols, args.database)?;
+                    get_companies_data(&symbols, args.database)?;
                 }
             }
         }
@@ -515,7 +518,7 @@ fn main() -> Result<(), &'static str> {
                 } else {
                     companies
                 };
-                get_polygon_companies_data(&companies, args.database)?;
+                get_companies_data(&companies, args.database)?;
             }
         }
     }
