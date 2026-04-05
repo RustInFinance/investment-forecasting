@@ -280,7 +280,7 @@ fn forecast_dividend_stocks(
             Target::manual(name,dy,dyg,sp) => {
 
                 // Get Dividend prediction
-                let (capital, final_payout, gains) = forecast_dividend_gains(
+                let (capital, final_payout, final_div_yield, gains) = forecast_dividend_gains(
                     base_capital,
                     *dy/100.0,
                     *dyg/100.0,
@@ -297,7 +297,7 @@ fn forecast_dividend_stocks(
                             max_y = *x;
                         }
                         format!(
-                        "{name}(DIVY[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2}) (Stock[$]: {:.2}, Payout[$]: {:.2},Payout2Investment[%]: {:.2}, Total Dividends Gains[$]: {:.2} )",*dy,*dyg,*sp, capital, final_payout, (final_payout/base_capital)*100.0,x
+                        "{name}(DIVY[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2})\n (Stock[$]: {:.2}, Payout[$]: {:.2},Payout2Investment[%]: {:.2}, Final DIVY[%]: {:.2},Total Dividends Gains[$]: {:.2} )",*dy,*dyg,*sp, capital, final_payout, (final_payout/base_capital)*100.0,final_div_yield*100.0,x
                     )},
                     None => panic!("Error: No dividend data to plot!"),
                 };
@@ -353,7 +353,7 @@ fn forecast_dividend_stocks(
                 };
 
                 // Get Dividend prediction
-                let (capital, final_payout, gains) = forecast_dividend_gains(
+                let (capital, final_payout, final_div_yield, gains) = forecast_dividend_gains(
                     base_capital,
                     dy,
                     dyg,
@@ -369,7 +369,7 @@ fn forecast_dividend_stocks(
                             max_y = *x;
                         }
                         format!(
-                        "{name}(DIVY[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2}) (Stock[$]: {:.2}, Payout[$]: {:.2} ,Final DIVY[%]: {:.2}, Total Payout[$]: {:.2} )",dy*100.0,dyg*100.0,share_price, capital, final_payout,num_capitalizations as f64*(final_payout/base_capital)*100.0,x
+                        "{name}(DIVY[%]: {:.2}, DYG 5G[%]: {:.2}, Price[$]: {:.2})\n (Stock[$]: {:.2}, Payout[$]: {:.2} ,Final DIVY[%]: {:.2}, Total Payout[$]: {:.2} )",dy*100.0,dyg*100.0,share_price, capital, final_payout,num_capitalizations as f64*(final_payout/base_capital)*100.0,x
                     )},
                     None => panic!("Error: No dividend data to plot!"),
                 };
@@ -407,7 +407,7 @@ fn forecast_dividend_gains(
     tax_rate: f64,
     time_line: &Vec<u32>,
     num_capitalizations: u32,
-) -> (f64, f64, Vec<f64>) {
+) -> (f64, f64, f64, Vec<f64>) {
     let mut gains: Vec<f64> = vec![];
 
     let mut curr_gain: f64 = 0.0;
@@ -415,6 +415,7 @@ fn forecast_dividend_gains(
     let mut curr_div = div_yield * share_price;
 
     let mut last_gain = 0.0;
+    let mut last_divy = div_yield;
 
     let capitalization_period = 365 / num_capitalizations;
 
@@ -435,13 +436,15 @@ fn forecast_dividend_gains(
             // Share price and div yeild update
             // Compute new share price
             share_price = share_price * (1.0 + share_price_growth_rate);
-            // Compute new Div Yield
+            // Compute new Div yield
+            last_divy = last_divy * (1.0 + div_yield_growth_5y);
+            // Compute new Div rate
             curr_div = curr_div * (1.0 + div_yield_growth_5y);
         }
         gains.push(curr_gain);
     });
 
-    (num_shares * share_price, last_gain, gains)
+    (num_shares * share_price, last_gain, last_divy, gains)
 }
 
 fn main() {
@@ -553,7 +556,7 @@ mod tests {
         let ref_final_payout: f64 = 425.0;
 
         // Compute dividend gains and value of stock
-        let (final_capital, final_payout, gains) = forecast_dividend_gains(
+        let (final_capital, final_payout, final_div_yield, gains) = forecast_dividend_gains(
             base_capital,
             div_yield,
             div_yield_growth_5y,
@@ -602,7 +605,7 @@ mod tests {
         let ref_total_payout: f64 = 425.0;
 
         // Compute dividend gains and value of stock
-        let (final_capital, final_payout, gains) = forecast_dividend_gains(
+        let (final_capital, final_payout, final_div_yield, gains) = forecast_dividend_gains(
             base_capital,
             div_yield,
             div_yield_growth_5y,
@@ -654,7 +657,7 @@ mod tests {
         let ref_final_payout: f64 = 116.88;
 
         // Compute dividend gains and value of stock
-        let (final_capital, final_payout, gains) = forecast_dividend_gains(
+        let (final_capital, final_payout, final_div_yield, gains) = forecast_dividend_gains(
             base_capital,
             div_yield,
             div_yield_growth_5y,
