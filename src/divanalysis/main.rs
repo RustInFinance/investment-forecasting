@@ -341,8 +341,11 @@ fn get_companies_data(companies: &[String], database: Option<String>) -> Result<
                 .vstack(&df)
                 .map_err(|_| "Unable to combine data frames")?;
 
+            // Lets sort it so most important is years of growth and within..
+            // .. the same results we sort according to dividend yield..
+            // .. and then lastly according the DGR 3Y
             let mut df = df
-                .sort(["Years of consecutive Div growth"], true, false)
+                .sort(["Years of consecutive Div growth", "Div Yield[%]","DGR 3Y[%]"], vec![true, true, true], false)
                 .unwrap();
 
             let mut file =
@@ -398,7 +401,7 @@ fn get_companies_data(companies: &[String], database: Option<String>) -> Result<
         .map_err(|_| "Unable to combine data frames")?;
 
     let df = df
-        .sort(["Years of consecutive Div growth"], true, false)
+        .sort(["Years of consecutive Div growth", "Div Yield[%]", "DGR 3Y[%]"], vec![true, true, true], false)
         .unwrap();
 
     println!("{df}");
