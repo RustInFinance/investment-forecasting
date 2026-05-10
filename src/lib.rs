@@ -605,6 +605,7 @@ pub fn get_yahoo_data(
     ),
     &'static str,
 > {
+    log::info!("Yahoo: Getting Ticker: {}", company);
     // create provider
     let mut provider =
         yahoo::YahooConnector::new().map_err(|_| "Could not create Yahoo provider")?;

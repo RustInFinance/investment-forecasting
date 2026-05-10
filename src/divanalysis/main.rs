@@ -55,6 +55,10 @@ struct Args {
     #[arg(long, default_value_t = 10.0)]
     max_div_yield: f64,
 
+    /// Target Dividend Yield[%]
+    #[arg(long, default_value_t = 4.0)]
+    target_yield: f64,
+
     /// Minimum accepted Dividend Growth rate[%]
     #[arg(long, default_value_t = 10.0)]
     min_div_growth_rate: f64,
@@ -66,6 +70,29 @@ struct Args {
     /// Standard and Poor 500 list's average DIV Yield[%]
     #[arg(long, default_value_t = 1.61)]
     sp500_divy: f64,
+}
+
+/// Calculate target share price when its div yield will reach our expected yield
+/// divy [%]
+/// target_divy [%]
+fn calculate_target_price_and_distance(
+    share_price: f64,
+    maybe_divy: Option<f64>,
+    target_divy: f64,
+) -> (Option<f64>, Option<f64>) {
+    // if there is no dividend yield given (no data avaialble)
+    // then we just return Nones
+    match maybe_divy {
+        Some(divy) => {
+            let ratio_divy = target_divy / divy;
+            let target_share_price = share_price / ratio_divy;
+            // if target is 50.0 and share price is 100.0 then 50.0/100.0 -100.0%  is -50%
+            //if target is 150.0 and share price is 100.0 then 150.0/100.0 - 100.0% is 50%
+            let distance = (target_share_price / share_price - 1.0) * 100.0;
+            (Some(target_share_price), Some(distance))
+        }
+        None => (None, None),
+    }
 }
 
 fn analyze_div_yield(
@@ -189,7 +216,7 @@ fn print_summary(df: &DataFrame, company: Option<&str>) -> Result<(), &'static s
 fn configure_dataframes_format() {
     // Make sure to show all columns
     if std::env::var("POLARS_FMT_MAX_COLS").is_err() {
-        std::env::set_var("POLARS_FMT_MAX_COLS", "13")
+        std::env::set_var("POLARS_FMT_MAX_COLS", "15")
     }
     // Make sure to show all raws
     if std::env::var("POLARS_FMT_MAX_ROWS").is_err() {
@@ -201,10 +228,15 @@ fn configure_dataframes_format() {
     }
 }
 
-fn get_companies_data(companies: &[String], database: Option<String>) -> Result<(), &'static str> {
+fn get_companies_data(
+    companies: &[String],
+    database: Option<String>,
+    target_yield: f64,
+) -> Result<(), &'static str> {
     let mut symbols: Vec<&str> = vec![];
     let mut share_prices: Vec<f64> = vec![];
     let mut curr_divs: Vec<Option<f64>> = vec![];
+    let mut target_prices: Vec<Option<f64>> = vec![];
     let mut divys: Vec<Option<f64>> = vec![];
     let mut freqs: Vec<Option<i64>> = vec![];
     let mut dgrs: Vec<Option<f64>> = vec![];
@@ -213,22 +245,28 @@ fn get_companies_data(companies: &[String], database: Option<String>) -> Result<
     let mut dgr1ys: Vec<Option<f64>> = vec![];
     let mut dgr1y_ttms: Vec<Option<f64>> = vec![];
     let mut years_growth: Vec<Option<i64>> = vec![];
+    let mut distances: Vec<Option<f64>> = vec![];
     let mut payout_ratios: Vec<Option<f64>> = vec![];
     let mut sectors: Vec<Option<String>> = vec![];
 
     let s1 = Series::new("Symbol", &symbols);
     let s2 = Series::new("Share Price", share_prices.clone());
     let s3 = Series::new("Recent Div", curr_divs.clone());
-    let s4 = Series::new("Annual Frequency", freqs.clone());
-    let s5 = Series::new("Div Yield[%]", divys.clone());
-    let s6 = Series::new("DGR 1Y TTM[%]", dgr1y_ttms.clone());
-    let s7 = Series::new("DGR 1Y[%]", dgr1ys.clone());
-    let s8 = Series::new("DGR 3Y[%]", dgrs.clone());
-    let s9 = Series::new("DGR 5Y[%]", dgrs.clone());
-    let s10 = Series::new("DGR 10Y[%]", dgrs.clone());
-    let s11 = Series::new("Years of consecutive Div growth", years_growth.clone());
-    let s12 = Series::new("Payout ratio[%]", payout_ratios.clone());
-    let s13 = Series::new("Industry Desc", sectors.clone());
+    let s4 = Series::new(
+        &format!("Target Price\n(Div yield {target_yield}%)"),
+        target_prices.clone(),
+    );
+    let s5 = Series::new("Annual Frequency", freqs.clone());
+    let s6 = Series::new("Div Yield[%]", divys.clone());
+    let s7 = Series::new("DGR 1Y TTM[%]", dgr1y_ttms.clone());
+    let s8 = Series::new("DGR 1Y[%]", dgr1ys.clone());
+    let s9 = Series::new("DGR 3Y[%]", dgrs.clone());
+    let s10 = Series::new("DGR 5Y[%]", dgrs.clone());
+    let s11 = Series::new("DGR 10Y[%]", dgrs.clone());
+    let s12 = Series::new("Years of\nconsecutive Div growth", years_growth.clone());
+    let s13 = Series::new("Distance\nto Target[%]", distances.clone());
+    let s14 = Series::new("Payout ratio[%]", payout_ratios.clone());
+    let s15 = Series::new("Industry Desc", sectors.clone());
     let df: DataFrame = DataFrame::new(vec![
         s1.clone(),
         s2.clone(),
@@ -243,6 +281,8 @@ fn get_companies_data(companies: &[String], database: Option<String>) -> Result<
         s11.clone(),
         s12.clone(),
         s13.clone(),
+        s14.clone(),
+        s15.clone(),
     ])
     .unwrap();
 
@@ -291,7 +331,11 @@ fn get_companies_data(companies: &[String], database: Option<String>) -> Result<
                 .expect("Error: unable to get Data from yahoo finance for forecasting")
         };
 
+        let (target_price, distance) =
+            calculate_target_price_and_distance(share_price, divy, target_yield);
+
         share_prices.push(share_price);
+        target_prices.push(target_price);
         curr_divs.push(curr_div);
         divys.push(divy);
         freqs.push(frequency);
@@ -301,24 +345,30 @@ fn get_companies_data(companies: &[String], database: Option<String>) -> Result<
         dgr1y_ttms.push(dgr1y_ttm);
         dgrs.push(dgr);
         years_growth.push(years_of_growth);
+        distances.push(distance);
         payout_ratios.push(payout_ratio);
-        symbols.push(&symbol);
+        symbols.push(symbol);
         sectors.push(sector_desc);
 
         if let Some(database) = database.clone() {
             let s1 = Series::new("Symbol", &symbols);
             let s2 = Series::new("Share Price", share_prices.clone());
             let s3 = Series::new("Recent Div", curr_divs.clone());
-            let s4 = Series::new("Annual Frequency", freqs.clone());
-            let s5 = Series::new("Div Yield[%]", divys.clone());
-            let s6 = Series::new("DGR 1Y TTM[%]", dgr1y_ttms.clone());
-            let s7 = Series::new("DGR 1Y[%]", dgr1ys.clone());
-            let s8 = Series::new("DGR 3Y[%]", dgr3ys.clone());
-            let s9 = Series::new("DGR 5Y[%]", dgr5ys.clone());
-            let s10 = Series::new("DGR 10Y[%]", dgrs.clone());
-            let s11 = Series::new("Years of consecutive Div growth", years_growth.clone());
-            let s12 = Series::new("Payout ratio[%]", payout_ratios.clone());
-            let s13 = Series::new("Industry Desc", sectors.clone());
+            let s4 = Series::new(
+                &format!("Target Price\n(Div yield {target_yield}%)"),
+                target_prices.clone(),
+            );
+            let s5 = Series::new("Annual Frequency", freqs.clone());
+            let s6 = Series::new("Div Yield[%]", divys.clone());
+            let s7 = Series::new("DGR 1Y TTM[%]", dgr1y_ttms.clone());
+            let s8 = Series::new("DGR 1Y[%]", dgr1ys.clone());
+            let s9 = Series::new("DGR 3Y[%]", dgr3ys.clone());
+            let s10 = Series::new("DGR 5Y[%]", dgr5ys.clone());
+            let s11 = Series::new("DGR 10Y[%]", dgrs.clone());
+            let s12 = Series::new("Years of\nconsecutive Div growth", years_growth.clone());
+            let s13 = Series::new("Distance\nto Target[%]", distances.clone());
+            let s14 = Series::new("Payout ratio[%]", payout_ratios.clone());
+            let s15 = Series::new("Industry Desc", sectors.clone());
 
             let df: DataFrame = DataFrame::new(vec![
                 s1.clone(),
@@ -334,6 +384,8 @@ fn get_companies_data(companies: &[String], database: Option<String>) -> Result<
                 s11.clone(),
                 s12.clone(),
                 s13.clone(),
+                s14.clone(),
+                s15.clone(),
             ])
             .unwrap();
 
@@ -345,7 +397,15 @@ fn get_companies_data(companies: &[String], database: Option<String>) -> Result<
             // .. the same results we sort according to dividend yield..
             // .. and then lastly according the DGR 3Y
             let mut df = df
-                .sort(["Years of consecutive Div growth", "Div Yield[%]","DGR 3Y[%]"], vec![true, true, true], false)
+                .sort(
+                    [
+                        "Years of\nconsecutive Div growth",
+                        "Div Yield[%]",
+                        "DGR 3Y[%]",
+                    ],
+                    vec![true, true, true],
+                    false,
+                )
                 .unwrap();
 
             let mut file =
@@ -368,16 +428,21 @@ fn get_companies_data(companies: &[String], database: Option<String>) -> Result<
     let s1 = Series::new("Symbol", &symbols);
     let s2 = Series::new("Share Price", share_prices.clone());
     let s3 = Series::new("Recent Div", curr_divs.clone());
-    let s4 = Series::new("Annual Frequency", freqs.clone());
-    let s5 = Series::new("Div Yield[%]", divys.clone());
-    let s6 = Series::new("DGR 1Y TTM[%]", dgr1y_ttms.clone());
-    let s7 = Series::new("DGR 1Y[%]", dgr1ys.clone());
-    let s8 = Series::new("DGR 3Y[%]", dgr3ys.clone());
-    let s9 = Series::new("DGR 5Y[%]", dgr5ys.clone());
-    let s10 = Series::new("DGR 10Y[%]", dgrs.clone());
-    let s11 = Series::new("Years of consecutive Div growth", years_growth.clone());
-    let s12 = Series::new("Payout ratio[%]", payout_ratios.clone());
-    let s13 = Series::new("Industry Desc", sectors.clone());
+    let s4 = Series::new(
+        &format!("Target Price\n(Div yield {target_yield}%)"),
+        target_prices.clone(),
+    );
+    let s5 = Series::new("Annual Frequency", freqs.clone());
+    let s6 = Series::new("Div Yield[%]", divys.clone());
+    let s7 = Series::new("DGR 1Y TTM[%]", dgr1y_ttms.clone());
+    let s8 = Series::new("DGR 1Y[%]", dgr1ys.clone());
+    let s9 = Series::new("DGR 3Y[%]", dgr3ys.clone());
+    let s10 = Series::new("DGR 5Y[%]", dgr5ys.clone());
+    let s11 = Series::new("DGR 10Y[%]", dgrs.clone());
+    let s12 = Series::new("Years of\nconsecutive Div growth", years_growth.clone());
+    let s13 = Series::new("Distance\nto Target[%]", distances.clone());
+    let s14 = Series::new("Payout ratio[%]", payout_ratios.clone());
+    let s15 = Series::new("Industry Desc", sectors.clone());
 
     let df: DataFrame = DataFrame::new(vec![
         s1.clone(),
@@ -393,15 +458,26 @@ fn get_companies_data(companies: &[String], database: Option<String>) -> Result<
         s11.clone(),
         s12.clone(),
         s13.clone(),
+        s14.clone(),
+        s15.clone(),
     ])
     .unwrap();
 
-    let df = start_df
-        .vstack(&df)
-        .map_err(|_| "Unable to combine data frames")?;
+    let df = start_df.vstack(&df).map_err(|e| {
+        println!("Error during combining data frames: {e}");
+        "Unable to combine data frames"
+    })?;
 
     let df = df
-        .sort(["Years of consecutive Div growth", "Div Yield[%]", "DGR 3Y[%]"], vec![true, true, true], false)
+        .sort(
+            [
+                "Years of\nconsecutive Div growth",
+                "Div Yield[%]",
+                "DGR 3Y[%]",
+            ],
+            vec![true, true, true],
+            false,
+        )
         .unwrap();
 
     println!("{df}");
@@ -488,7 +564,7 @@ fn main() -> Result<(), &'static str> {
                     companies.into_iter().for_each(|(s, _)| {
                         symbols.push(s);
                     });
-                    get_companies_data(&symbols, args.database)?;
+                    get_companies_data(&symbols, args.database, args.target_yield)?;
                 }
             }
         }
@@ -521,7 +597,7 @@ fn main() -> Result<(), &'static str> {
                 } else {
                     companies
                 };
-                get_companies_data(&companies, args.database)?;
+                get_companies_data(&companies, args.database, args.target_yield)?;
             }
         }
     }
@@ -620,6 +696,41 @@ mod tests {
         let result = analyze_dividend_payout_rate(&df, max_payout_rate).unwrap();
         //print!("result DF: {result}");
         assert!(result.frame_equal(&ref_df));
+        Ok(())
+    }
+
+    #[test]
+    fn test_target_price_and_distance() -> Result<(), String> {
+        let share_price = 100.0;
+        let divy = 2.0;
+
+        let target_divy = 4.0;
+        let expected_target_price = Some(50.0);
+        let expected_distance = Some(-50.0);
+        let (target_price, distance) =
+            calculate_target_price_and_distance(share_price, Some(divy), target_divy);
+        // given 2.0% of 100.0 , 4% will be at 50.0USD e.g. x => 100/2.0 = 50.0
+        assert_eq!(target_price, expected_target_price);
+        // distance: 50.0/100.0 * 100% - 100.0% = 50.0%
+        assert_eq!(distance, expected_distance);
+
+        let target_divy = 1.0;
+        let expected_target_price = Some(200.0);
+        let expected_distance = Some(100.0);
+        let (target_price, distance) =
+            calculate_target_price_and_distance(share_price, Some(divy), target_divy);
+        // given 2.0% of 100.0 , 1% will be at 200.0USD e.g. x => 100*2.0 = 200.0
+        assert_eq!(target_price, expected_target_price);
+        // distance: 200.0/100.0 * 100% - 100.0% = 100.0%
+        assert_eq!(distance, expected_distance);
+
+        let expected_target_price = None;
+        let expected_distance = None;
+        let (target_price, distance) =
+            calculate_target_price_and_distance(share_price, None, target_divy);
+        // No divy avaialbe then no target price and distance
+        assert_eq!(target_price, expected_target_price);
+        assert_eq!(distance, expected_distance);
         Ok(())
     }
 
