@@ -3,8 +3,8 @@ use polars::prelude::*;
 use std::collections::BTreeMap;
 use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
+use indicatif::ProgressBar;
 
-// // TODO: Print dividend data and then add in summary the dividend per month
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Exchange {
     EUR(String),
@@ -274,12 +274,13 @@ impl<'a> Stock<'a> {
     }
 }
 
-fn get_data(
-    symbol: &str,
+fn get_data<'a>(
+    symbol: &'a str,
     investement: Currency,
     num_shares: f64,
     div_yield: Option<f64>,
-) -> Result<Stock, Box<dyn std::error::Error>> {
+    pb : &'a ProgressBar,
+) -> Result<Stock<'a>, Box<dyn std::error::Error>> {
     // Tworzenie providera Yahoo Finance
     let mut provider = yahoo::YahooConnector::new()?;
 
@@ -359,6 +360,8 @@ fn get_data(
 
     let monthly_dividends = get_dividend_history(symbol, num_shares)?;
 
+    pb.inc(1);
+
     Ok(Stock::new(
         symbol,
         investement,
@@ -423,6 +426,10 @@ fn main() -> Result<(), String> {
         std::env::set_var("POLARS_FMT_MAX_ROWS", "-1")
     }
 
+    // Lets make some progress bar
+    let pb = ProgressBar::no_length();
+
+
     // Get stock prices , get dividends data and get EUR/USD
 
     // List of companies in a format (symbol, invested financial resources, current value, current
@@ -434,6 +441,7 @@ fn main() -> Result<(), String> {
             Currency::USD(1210.0 + 11.20 + 800.0 + 11.91),
             827.09,
             None,
+            &pb,
         )
         .unwrap(),
     ];
@@ -441,8 +449,7 @@ fn main() -> Result<(), String> {
     print_data_frame(&ania);
 
     let jacek = vec![
-        get_data("VVD.DE", Currency::EUR(5669.23 + 2323.69), 230.02, None).unwrap(),
-        //    Stock::new("DE000A289XJ2",Currency::USD(2594.37),   Currency::EUR(2627.66),  0.0501),
+        get_data("AHOG.DE", Currency::EUR(5980.74), 179.11, None,&pb).unwrap(),
     ];
     print_data_frame(&jacek);
 
