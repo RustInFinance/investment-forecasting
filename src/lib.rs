@@ -10,8 +10,15 @@ use polygon_client::rest::RESTClient;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
-// TODO: connector reuse of yahoo
-
+pub fn get_yahoo_connector() -> Result<Option<yahoo::YahooConnector>, String> {
+    if std::env::var("POLYGON_AUTH_KEY").is_ok() {
+        Ok(None)
+    } else {
+        Ok(Some(yahoo::YahooConnector::new().map_err(|_| {
+            "Could not create Yahoo provider".to_owned()
+        })?))
+    }
+}
 
 pub fn load_list<R>(excel: &mut Xlsx<R>, category: &str) -> Result<DataFrame, &'static str>
 where
@@ -591,6 +598,7 @@ async fn get_dividiend_data(
 }
 pub fn get_yahoo_data(
     company: &str,
+    provider: &mut yahoo::YahooConnector,
 ) -> Result<
     (
         f64,
@@ -609,9 +617,6 @@ pub fn get_yahoo_data(
     &'static str,
 > {
     log::info!("Yahoo: Getting Ticker: {}", company);
-    // create provider
-    let mut provider =
-        yahoo::YahooConnector::new().map_err(|_| "Could not create Yahoo provider")?;
 
     // stock price
     let response = provider.get_latest_quotes(company, "1d").map_err(|e| {

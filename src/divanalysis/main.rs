@@ -1,7 +1,7 @@
 use calamine::{open_workbook, Xlsx};
 use clap::Parser;
-use polars::prelude::*;
 use indicatif::ProgressBar;
+use polars::prelude::*;
 
 // TODO: Make progressbar
 // TODO: convert dividends derived elements into TTM data
@@ -235,8 +235,6 @@ fn get_companies_data(
     database: Option<String>,
     target_yield: f64,
 ) -> Result<(), &'static str> {
-
-
     // If we have explicitly given companies then make progress bar with specific length
     // otherwise just make the one without length
     let pb = if companies.is_empty() {
@@ -321,6 +319,10 @@ fn get_companies_data(
         df
     };
 
+    let use_polygon = std::env::var("POLYGON_AUTH_KEY").is_ok();
+    let mut provider = investments_forecasting::get_yahoo_connector()
+        .map_err(|_| "Error: Unable to create yahoo connector")?;
+
     let maybe_success = companies.iter().try_for_each(|symbol| {
         let (
             share_price,
@@ -335,11 +337,12 @@ fn get_companies_data(
             years_of_growth,
             payout_ratio,
             sector_desc,
-        ) = if std::env::var("POLYGON_AUTH_KEY").is_ok() {
+        ) = if use_polygon {
             investments_forecasting::get_polygon_data(symbol)
                 .expect("Error: unable to get Data from polygon IO for forecasting")
         } else {
-            investments_forecasting::get_yahoo_data(symbol)
+            let myref = provider.as_mut().unwrap();
+            investments_forecasting::get_yahoo_data(symbol, myref)
                 .expect("Error: unable to get Data from yahoo finance for forecasting")
         };
 
@@ -515,17 +518,12 @@ fn main() -> Result<(), &'static str> {
         None
     };
 
-
-
     //let company = <std::string::String as AsRef<str>>::as_ref(&args.company).to_uppercase();
     let companies = args
         .company
         .iter()
         .map(|x| x.to_uppercase())
         .collect::<Vec<String>>();
-
-
-
 
     // For no handpicked companies just make overall analysis
     if companies.len() == 0 {

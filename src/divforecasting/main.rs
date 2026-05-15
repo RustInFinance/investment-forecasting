@@ -342,7 +342,8 @@ fn forecast_dividend_stocks(
                         if std::env::var("POLYGON_AUTH_KEY").is_ok() { 
                             investments_forecasting::get_polygon_data(&name).expect("Error: unable to get Data from polygon IO for forecasting")
                         } else {
-                            investments_forecasting::get_yahoo_data(&name).expect("Error: unable to get Data from yahoo finance for forecasting")
+                            let provider = investments_forecasting::get_yahoo_connector().expect("Unable to create yahoo connector");
+                            investments_forecasting::get_yahoo_data(&name,&mut provider.unwrap()).expect("Error: unable to get Data from yahoo finance for forecasting")
                         };
                         num_capitalizations = frequency.expect("Cannot forecast dividend gains as there is no dividend data") as u32;
                         let divy = divy.expect("Cannot forecast dividend gains as there is no dividend data");
