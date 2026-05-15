@@ -10,6 +10,9 @@ use polygon_client::rest::RESTClient;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
+// TODO: connector reuse of yahoo
+
+
 pub fn load_list<R>(excel: &mut Xlsx<R>, category: &str) -> Result<DataFrame, &'static str>
 where
     R: std::io::BufRead,

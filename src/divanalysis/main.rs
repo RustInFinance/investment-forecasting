@@ -1,7 +1,9 @@
 use calamine::{open_workbook, Xlsx};
 use clap::Parser;
 use polars::prelude::*;
+use indicatif::ProgressBar;
 
+// TODO: Make progressbar
 // TODO: convert dividends derived elements into TTM data
 // TODO: Add support for Revenue and FCF
 // TODO: Make payout ratio based on FCF
@@ -233,6 +235,16 @@ fn get_companies_data(
     database: Option<String>,
     target_yield: f64,
 ) -> Result<(), &'static str> {
+
+
+    // If we have explicitly given companies then make progress bar with specific length
+    // otherwise just make the one without length
+    let pb = if companies.is_empty() {
+        ProgressBar::no_length()
+    } else {
+        ProgressBar::new(companies.len() as u64)
+    };
+
     let mut symbols: Vec<&str> = vec![];
     let mut share_prices: Vec<f64> = vec![];
     let mut curr_divs: Vec<Option<f64>> = vec![];
@@ -418,6 +430,8 @@ fn get_companies_data(
             log::info!("DataFrame was written to: {database} file");
         }
 
+        pb.inc(1);
+
         Ok::<(), &'static str>(())
     });
 
@@ -501,12 +515,18 @@ fn main() -> Result<(), &'static str> {
         None
     };
 
+
+
     //let company = <std::string::String as AsRef<str>>::as_ref(&args.company).to_uppercase();
     let companies = args
         .company
         .iter()
         .map(|x| x.to_uppercase())
         .collect::<Vec<String>>();
+
+
+
+
     // For no handpicked companies just make overall analysis
     if companies.len() == 0 {
         if args.list_all {
